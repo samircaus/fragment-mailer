@@ -7,7 +7,6 @@
 		updatedAt: string;
 	}
 
-	// Mock campaigns for the landing page
 	const campaigns: Campaign[] = [
 		{
 			id: 'mock-campaign-1',
@@ -37,15 +36,17 @@
 <div class="page">
 	<header>
 		<div class="header-inner">
-			<div class="wordmark">Fragment Mailer</div>
-			<p class="tagline">Preview AEM Content Fragment emails before they reach Journey Optimizer</p>
+			<div class="brand">
+				<span class="brand-dot"></span>
+				<span class="brand-name">Fragment Mailer</span>
+			</div>
 		</div>
 	</header>
 
 	<main>
 		<div class="section-header">
 			<h2>Campaigns</h2>
-			<span class="badge">MOCK MODE</span>
+			<span class="badge">Mock</span>
 		</div>
 
 		<div class="campaign-grid">
@@ -56,8 +57,10 @@
 						<span class="status-chip status-{campaign.status}">{campaign.status}</span>
 					</div>
 					<h3>{campaign.name}</h3>
-					<p class="meta">Updated {formatDate(campaign.updatedAt)}</p>
-					<div class="card-cta">Open in editor →</div>
+					<div class="card-footer">
+						<span class="date">{formatDate(campaign.updatedAt)}</span>
+						<span class="card-arrow">Open →</span>
+					</div>
 				</a>
 			{/each}
 		</div>
@@ -67,133 +70,164 @@
 <style>
 	.page {
 		min-height: 100vh;
-		background: #f8f8f8;
+		background: #fafafa;
 	}
 
 	header {
-		background: #1a1a1a;
-		color: white;
-		padding: 32px 40px;
+		background: #111;
+		padding: 0 40px;
+		height: 52px;
+		display: flex;
+		align-items: center;
+		border-bottom: 1px solid #222;
 	}
 
 	.header-inner {
 		max-width: 960px;
+		width: 100%;
 		margin: 0 auto;
 	}
 
-	.wordmark {
-		font-size: 20px;
-		font-weight: 700;
-		letter-spacing: -0.5px;
-		margin-bottom: 6px;
+	.brand {
+		display: flex;
+		align-items: center;
+		gap: 10px;
 	}
 
-	.tagline {
+	.brand-dot {
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		background: #5b5bd6;
+		flex-shrink: 0;
+	}
+
+	.brand-name {
 		font-size: 14px;
-		color: #888;
+		font-weight: 600;
+		color: #fff;
+		letter-spacing: -0.2px;
 	}
 
 	main {
 		max-width: 960px;
 		margin: 0 auto;
-		padding: 40px;
+		padding: 48px 40px;
 	}
 
 	.section-header {
 		display: flex;
-		align-items: center;
-		gap: 12px;
-		margin-bottom: 20px;
+		align-items: baseline;
+		gap: 10px;
+		margin-bottom: 24px;
 	}
 
 	.section-header h2 {
-		font-size: 18px;
+		font-size: 15px;
 		font-weight: 600;
+		color: #111;
+		letter-spacing: -0.2px;
 	}
 
 	.badge {
 		font-size: 10px;
-		font-weight: 700;
-		letter-spacing: 0.5px;
-		background: #fff3cd;
-		color: #856404;
-		border: 1px solid #ffc107;
-		padding: 2px 8px;
+		font-weight: 600;
+		letter-spacing: 0.3px;
+		background: #fff7ed;
+		color: #c2410c;
+		border: 1px solid #fed7aa;
+		padding: 1px 7px;
 		border-radius: 999px;
+		text-transform: uppercase;
 	}
 
 	.campaign-grid {
 		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-		gap: 16px;
+		grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+		gap: 12px;
 	}
 
 	.campaign-card {
-		background: white;
-		border: 1px solid #e5e5e5;
-		border-radius: 8px;
+		background: #fff;
+		border: 1px solid #e4e4e7;
+		border-radius: 10px;
 		padding: 20px;
 		text-decoration: none;
 		color: inherit;
 		display: flex;
 		flex-direction: column;
-		gap: 8px;
-		transition:
-			border-color 0.15s,
-			box-shadow 0.15s;
+		gap: 10px;
+		transition: border-color 0.12s, box-shadow 0.12s, transform 0.12s;
 	}
 
 	.campaign-card:hover {
-		border-color: #0265dc;
-		box-shadow: 0 2px 8px rgba(2, 101, 220, 0.12);
+		border-color: #5b5bd6;
+		box-shadow: 0 0 0 3px rgba(91, 91, 214, 0.08);
+		transform: translateY(-1px);
 	}
 
 	.card-top {
 		display: flex;
-		gap: 8px;
 		align-items: center;
+		gap: 6px;
 	}
 
 	.template-chip {
 		font-size: 11px;
-		background: #e8f0fe;
-		color: #0265dc;
+		font-weight: 600;
+		background: #ededfc;
+		color: #5b5bd6;
 		padding: 2px 8px;
 		border-radius: 4px;
-		font-weight: 600;
+		letter-spacing: 0.2px;
 	}
 
 	.status-chip {
 		font-size: 11px;
+		font-weight: 500;
 		padding: 2px 8px;
 		border-radius: 4px;
 	}
 
 	.status-draft {
-		background: #f5f5f5;
-		color: #666;
+		background: #f4f4f5;
+		color: #71717a;
 	}
 
 	.status-live {
-		background: #d4edda;
-		color: #155724;
+		background: #dcfce7;
+		color: #15803d;
 	}
 
 	h3 {
-		font-size: 15px;
+		font-size: 14px;
 		font-weight: 600;
-		color: #1a1a1a;
+		color: #111;
+		letter-spacing: -0.2px;
+		line-height: 1.4;
 	}
 
-	.meta {
+	.card-footer {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		margin-top: 2px;
+	}
+
+	.date {
 		font-size: 12px;
-		color: #888;
+		color: #a1a1aa;
 	}
 
-	.card-cta {
-		margin-top: 4px;
-		font-size: 13px;
-		color: #0265dc;
+	.card-arrow {
+		font-size: 12px;
+		color: #5b5bd6;
 		font-weight: 500;
+		opacity: 0;
+		transition: opacity 0.12s;
+	}
+
+	.campaign-card:hover .card-arrow {
+		opacity: 1;
 	}
 </style>

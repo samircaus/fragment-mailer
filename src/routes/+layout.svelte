@@ -18,9 +18,10 @@
 	}
 
 	:global(body) {
-		font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+		font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
 		font-size: 14px;
-		color: #1a1a1a;
-		background: #f8f8f8;
+		-webkit-font-smoothing: antialiased;
+		color: #111;
+		background: #fafafa;
 	}
 </style>
