@@ -1,0 +1,55 @@
+{
+  "/content/dam/campaigns/spring-promo-2025": {
+    "_path": "/content/dam/campaigns/spring-promo-2025",
+    "_model": {
+      "_path": "/conf/global/settings/dam/cfm/models/email-campaign",
+      "title": "Email Campaign"
+    },
+    "_variation": "master",
+    "_metadata": {
+      "stringMetadata": [
+        { "name": "cq:lastModified", "value": "2025-03-15T10:30:00Z" },
+        { "name": "cq:lastModifiedBy", "value": "author@adobe.com" }
+      ]
+    },
+    "heroHeadline": "Spring into Savings: Up to 40% Off",
+    "subtitle": "Our biggest sale of the season starts now",
+    "bodyCopy": "We've curated our best offers just for you. From wardrobe refreshes to home upgrades, discover everything you need to make this spring unforgettable. Offers are available for a limited time only — don't miss out.",
+    "ctaText": "Shop the Sale",
+    "ctaUrl": "https://example.com/spring-sale?utm_source=email&utm_medium=promo",
+    "featuredOffer": {
+      "_path": "/content/dam/offers/spring-bundle-2025",
+      "_model": {
+        "_path": "/conf/global/settings/dam/cfm/models/offer",
+        "title": "Offer"
+      },
+      "_variation": "master",
+      "_metadata": {
+        "stringMetadata": [
+          { "name": "cq:lastModified", "value": "2025-03-14T08:00:00Z" }
+        ]
+      },
+      "headline": "Spring Bundle Deal",
+      "description": "Get 3 items for the price of 2 across our entire spring collection. No code needed.",
+      "offerCode": "SPRING3FOR2",
+      "expiresAt": "2025-04-30"
+    }
+  },
+  "/content/dam/campaigns/welcome-series-1": {
+    "_path": "/content/dam/campaigns/welcome-series-1",
+    "_model": {
+      "_path": "/conf/global/settings/dam/cfm/models/email-campaign",
+      "title": "Email Campaign"
+    },
+    "_variation": "master",
+    "_metadata": {
+      "stringMetadata": [
+        { "name": "cq:lastModified", "value": "2025-02-01T09:00:00Z" }
+      ]
+    },
+    "heroHeadline": "Welcome to the Family",
+    "bodyCopy": "Thanks for joining us. As a new member, you'll be the first to hear about exclusive deals, new arrivals, and members-only events. We're thrilled to have you.",
+    "ctaText": "Explore Now",
+    "ctaUrl": "https://example.com/new-member?utm_source=email&utm_medium=welcome"
+  }
+}

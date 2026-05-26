@@ -1,0 +1,105 @@
+<mjml>
+  <mj-head>
+    <mj-attributes>
+      <mj-all font-family="Arial, Helvetica, sans-serif" />
+      <mj-text font-size="16px" color="#333333" line-height="1.6" />
+      <mj-button background-color="#0265DC" color="#FFFFFF" border-radius="4px" font-size="15px" font-weight="bold" inner-padding="14px 28px" />
+    </mj-attributes>
+    <mj-preview>{{cf.heroHeadline}}</mj-preview>
+    <mj-style>
+      .footer-link { color: #767676; text-decoration: none; }
+      .footer-link:hover { text-decoration: underline; }
+    </mj-style>
+  </mj-head>
+
+  <mj-body background-color="#F4F4F4">
+
+    <!-- ─── Header ─── -->
+    <mj-section background-color="#FFFFFF" padding="24px 24px 12px">
+      <mj-column>
+        <mj-text font-size="12px" color="#767676" align="center" text-transform="uppercase" letter-spacing="2px">
+          {{static.companyName}}
+        </mj-text>
+      </mj-column>
+    </mj-section>
+
+    <!-- ─── Hero ─── -->
+    <mj-section background-color="#FFFFFF" padding="20px 40px 16px">
+      <mj-column>
+        <mj-text font-size="32px" font-weight="bold" color="#1A1A1A" align="center" line-height="1.25">
+          {{cf.heroHeadline}}
+        </mj-text>
+        {{#if cf.subtitle}}
+        <mj-text font-size="18px" color="#555555" align="center" padding-top="8px" line-height="1.4">
+          {{cf.subtitle}}
+        </mj-text>
+        {{/if}}
+      </mj-column>
+    </mj-section>
+
+    <!-- ─── Personalised greeting ─── -->
+    <mj-section background-color="#FFFFFF" padding="8px 40px 0">
+      <mj-column>
+        <mj-text font-size="16px" color="#333333">
+          Hi {{profile.person.name.firstName}},
+        </mj-text>
+      </mj-column>
+    </mj-section>
+
+    <!-- ─── Body copy ─── -->
+    <mj-section background-color="#FFFFFF" padding="8px 40px 32px">
+      <mj-column>
+        <mj-text font-size="16px" color="#444444" line-height="1.7">
+          {{cf.bodyCopy}}
+        </mj-text>
+      </mj-column>
+    </mj-section>
+
+    <!-- ─── Featured offer (optional) ─── -->
+    {{#if cf.featuredOffer.headline}}
+    <mj-section background-color="#EBF3FF" padding="32px 40px">
+      <mj-column>
+        <mj-text font-size="11px" color="#0265DC" align="center" text-transform="uppercase" letter-spacing="2px" font-weight="bold">
+          Featured Offer
+        </mj-text>
+        <mj-text font-size="24px" font-weight="bold" color="#1A1A1A" align="center" padding-top="8px">
+          {{cf.featuredOffer.headline}}
+        </mj-text>
+        <mj-text font-size="15px" color="#555555" align="center" padding-top="4px">
+          {{cf.featuredOffer.description}}
+        </mj-text>
+      </mj-column>
+    </mj-section>
+    {{/if}}
+
+    <!-- ─── CTA ─── -->
+    <mj-section background-color="#FFFFFF" padding="32px 40px">
+      <mj-column>
+        <mj-button href="{{cf.ctaUrl}}" align="center">
+          {{cf.ctaText}}
+        </mj-button>
+      </mj-column>
+    </mj-section>
+
+    <!-- ─── Divider ─── -->
+    <mj-section background-color="#FFFFFF" padding="0 40px 16px">
+      <mj-column>
+        <mj-divider border-color="#EEEEEE" border-width="1px" />
+      </mj-column>
+    </mj-section>
+
+    <!-- ─── Footer ─── -->
+    <mj-section background-color="#F4F4F4" padding="24px 40px">
+      <mj-column>
+        <mj-text font-size="12px" color="#888888" align="center" line-height="1.6">
+          © {{static.year}} {{static.companyName}}. All rights reserved.<br/>
+          You're receiving this because you opted in to {{static.companyName}} marketing emails.<br/>
+          <a href="{{static.unsubscribeUrl}}" class="footer-link">Unsubscribe</a>
+          &nbsp;·&nbsp;
+          <a href="{{static.privacyUrl}}" class="footer-link">Privacy Policy</a>
+        </mj-text>
+      </mj-column>
+    </mj-section>
+
+  </mj-body>
+</mjml>

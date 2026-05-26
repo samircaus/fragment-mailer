@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node --input-type=module -e ' *)",
+      "Bash(curl -s 'http://localhost:5174/api/export?campaignId=mock-campaign-1')",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\('manifest templateId:', d['manifest']['templateId'], '| html bytes:', len\\(d['html']\\)\\)\")",
+      "Bash(curl -s http://localhost:5174/editor/mock-campaign-1)",
+      "Bash(curl -s -X POST http://localhost:5174/api/validate -H 'Content-Type: application/json' -d '{\"fields\":{\"heroHeadline\":\"Text with &lt;sub&gt;tag\"},\"fieldTypes\":{\"heroHeadline\":\"text\"}}')",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\('warnings:', len\\(d['warnings']\\), '| severity:', d['warnings'][0]['severity'] if d['warnings'] else 'none'\\)\")"
+    ]
+  }
+}

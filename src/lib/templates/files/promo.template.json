@@ -1,0 +1,41 @@
+{
+  "id": "promo",
+  "name": "Promotional Email",
+  "version": "1.0.0",
+  "cfModel": "EmailCampaign",
+  "fields": {
+    "heroHeadline": {
+      "type": "text",
+      "required": true,
+      "binding": "cf.heroHeadline"
+    },
+    "subtitle": {
+      "type": "text",
+      "required": false,
+      "binding": "cf.subtitle"
+    },
+    "bodyCopy": {
+      "type": "richtext",
+      "required": true,
+      "binding": "cf.bodyCopy"
+    },
+    "ctaText": {
+      "type": "text",
+      "required": true,
+      "binding": "cf.ctaText"
+    },
+    "ctaUrl": {
+      "type": "url",
+      "required": true,
+      "binding": "cf.ctaUrl"
+    },
+    "featuredOffer": {
+      "type": "reference",
+      "model": "Offer",
+      "required": false,
+      "binding": "cf.featuredOffer"
+    }
+  },
+  "profileTokens": ["profile.person.name.firstName"],
+  "previewSize": { "width": 600, "height": 800 }
+}
