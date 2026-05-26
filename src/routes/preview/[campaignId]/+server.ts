@@ -13,7 +13,7 @@ import { loadTemplate } from '$lib/templates/registry.js';
 import type { TemplateEntry, TemplateDefinition } from '$lib/templates/registry.js';
 import { resolve } from '$lib/render/resolve.js';
 import { compileMJML } from '$lib/render/mjml.js';
-import { injectUEAttributes } from '$lib/render/inject-ue.js';
+import { injectUEAttributes, injectUEBody, injectUEHead } from '$lib/render/inject-ue.js';
 import { validate } from '$lib/render/validate.js';
 import { getPersona, flattenPersona } from '$lib/personas/samples.js';
 
@@ -75,7 +75,7 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
 		);
 	}
 
-	// Inject UE attributes
+	// Inject UE attributes onto each CF-bound span
 	const bindings = Object.entries(definition.fields).map(([fieldId, fieldDef]) => ({
 		fieldPath: fieldDef.binding,
 		cfPath: cf.path,
@@ -83,6 +83,8 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
 		fieldType: fieldDef.type as 'text' | 'richtext' | 'url' | 'reference'
 	}));
 	let html = injectUEAttributes(compileResult.html, bindings);
+	html = injectUEBody(html, cf.path, 'email-cf');
+	html = injectUEHead(html, env?.AEM_BASE_URL ?? 'https://author-p00000-e00000.adobeaemcloud.com');
 
 	// Run validation and inject warning markers as HTML comments
 	const fieldTypes: Record<string, string> = {};

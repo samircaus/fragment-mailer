@@ -1,0 +1,23 @@
+{
+  "groups": [
+    {
+      "title": "Email",
+      "id": "email",
+      "components": [
+        {
+          "title": "Email Content Fragment",
+          "id": "email-cf",
+          "model": "email-cf",
+          "plugins": {
+            "aem": {
+              "cf": {
+                "name": "EmailCampaign",
+                "cfModel": "EmailCampaign"
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
