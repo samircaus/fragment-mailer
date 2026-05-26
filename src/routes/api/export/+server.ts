@@ -13,6 +13,8 @@ import { resolve } from '$lib/render/resolve.js';
 import { compileMJML } from '$lib/render/mjml.js';
 import { getPersona, flattenPersona } from '$lib/personas/samples.js';
 import { buildManifest } from '$lib/manifest/builder.js';
+import { loadCampaign } from '$lib/campaigns/registry.js';
+import type { Campaign } from '$lib/campaigns/registry.js';
 
 export const GET: RequestHandler = async ({ url, platform }) => {
 	const env = platform?.env;
@@ -26,7 +28,7 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 	}
 
 	// Load campaign
-	const campaign = await loadCampaign(campaignId);
+	const campaign = loadCampaign(campaignId);
 	if (!campaign) {
 		throw error(404, `Campaign "${campaignId}" not found`);
 	}
@@ -97,21 +99,6 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 	);
 };
 
-interface Campaign {
-	id: string;
-	name: string;
-	templateId: string;
-	cfPath: string;
-	status: string;
-}
-
-async function loadCampaign(id: string): Promise<Campaign | null> {
-	const mod = await import('../../../../tests/fixtures/sample-campaigns.json', {
-		with: { type: 'json' }
-	});
-	const campaigns = mod.default as Record<string, Campaign>;
-	return campaigns[id] ?? null;
-}
 
 async function resolveReferencedCFs(
 	fields: Record<string, unknown>,

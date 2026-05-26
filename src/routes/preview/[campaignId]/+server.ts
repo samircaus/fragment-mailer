@@ -16,6 +16,7 @@ import { compileMJML } from '$lib/render/mjml.js';
 import { injectUEAttributes, injectUEHead } from '$lib/render/inject-ue.js';
 import { validate } from '$lib/render/validate.js';
 import { getPersona, flattenPersona } from '$lib/personas/samples.js';
+import { loadCampaign } from '$lib/campaigns/registry.js';
 
 export const GET: RequestHandler = async ({ params, url, platform }) => {
 	const env = platform?.env;
@@ -33,7 +34,7 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
 	const { definition, mjml } = templateResult.data as TemplateEntry;
 
 	// Load campaign to get CF path
-	const campaign = await loadCampaign(campaignId);
+	const campaign = loadCampaign(campaignId);
 	if (!campaign) {
 		throw error(404, `Campaign "${campaignId}" not found`);
 	}
@@ -110,19 +111,6 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
 	});
 };
 
-interface Campaign {
-	id: string;
-	templateId: string;
-	cfPath: string;
-}
-
-async function loadCampaign(id: string): Promise<Campaign | null> {
-	const mod = await import('../../../../tests/fixtures/sample-campaigns.json', {
-		with: { type: 'json' }
-	});
-	const campaigns = mod.default as Record<string, Campaign>;
-	return campaigns[id] ?? null;
-}
 
 // Merge referenced CF objects into the top-level cf context so the resolver
 // can traverse {{cf.featuredOffer.headline}} correctly.
