@@ -143,6 +143,65 @@ Templates are bundled with the Worker at build time via Vite's `?raw` import —
 
 ---
 
+## Universal Editor preview (Author-tier CF integration)
+
+### How it works
+
+The `/ue/:fragmentId` route renders a live Content Fragment from AEM Author inside a
+Universal Editor iframe. It uses the **CF Management OpenAPI** (`/adobe/sites/cf`) with
+the IMS bearer token forwarded by UE — not service credentials, not GraphQL.
+
+### Query params consumed on first open
+
+| Param | Source | Description |
+|---|---|---|
+| `login-token` | UE | IMS bearer token for the logged-in author |
+| `author` | UE | Full Author host URL, e.g. `https://author-p12345-e67890.adobeaemcloud.com` |
+| `publish` | UE | Publish host (stored but not used for API calls) |
+| `env` | UE | Environment hint (informational) |
+
+On first open, the server reads these params, stores the token in an **httpOnly cookie**
+(`aem_token`), and redirects to the clean URL. Subsequent loads use the cookie. The token
+never appears in rendered HTML.
+
+### Required UE configuration
+
+In your UE config JSON (`/universal-editor-configuration.json` or the AEM page component):
+
+```json
+{
+  "connections": [
+    { "name": "aemconnection", "protocol": "aem", "uri": "https://author-pXXXX-eXXXX.adobeaemcloud.com" }
+  ]
+}
+```
+
+Point UE at `https://<this-app-origin>/ue/<fragmentId>` as the preview URL.
+
+### Local dev story
+
+1. Run `npm run dev` (Vite dev server at `http://localhost:5173`)
+2. Open the route directly with mock params:
+   ```
+   http://localhost:5173/ue/<fragment-uuid>?login-token=<your-IMS-token>&author=https://author-pXXXX-eXXXX.adobeaemcloud.com
+   ```
+3. The server sets an httpOnly cookie and redirects to `/ue/<fragment-uuid>`.
+4. For real editing, attach the Universal Editor desktop app or open from the AEM Author Sites console.
+
+### CORS / X-Frame-Options notes (verify before production)
+
+- **AEM Author CORS**: The CF Management OpenAPI has its own CORS policy on Author, separate
+  from GraphQL or dispatcher CORS. All AEM calls here are **server-to-server** (SvelteKit →
+  Author), so browser-level CORS does not apply. No allowlist changes needed for API calls.
+- **X-Frame-Options on Author**: AEM Author sets `X-Frame-Options: SAMEORIGIN` by default.
+  The UE service (`universal-editor-service.adobe.io`) is exempt, but if you embed any
+  Author-hosted asset directly in the iframe you may hit this. Confirm with the AEM ops team.
+- **Session cookie `SameSite`**: The `aem_token` cookie is set with `SameSite=None; Secure`
+  when the app is served over HTTPS. On `http://localhost` it falls back to `SameSite=Lax`
+  (HTTPS not required in local dev). UE production deployments must be HTTPS.
+
+---
+
 ## Open spikes (blocking for production)
 
 ### 1. AJO Content Templates API — CF reference preservation

@@ -2,6 +2,12 @@
 
 declare global {
 	namespace App {
+		interface Locals {
+			aem?: {
+				token: string;
+				authorHost: string;
+			};
+		}
 		interface Platform {
 			env: Env;
 			cf: CfProperties;
