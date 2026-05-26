@@ -14,7 +14,7 @@
     },
     "heroHeadline": "Spring into Savings: Up to 40% Off",
     "subtitle": "Our biggest sale of the season starts now",
-    "bodyCopy": "We've curated our best offers just for you. From wardrobe refreshes to home upgrades, discover everything you need to make this spring unforgettable. Offers are available for a limited time only — don't miss out.",
+    "bodyCopy": "<p>We've curated our <strong>best offers</strong> just for you. From wardrobe refreshes to home upgrades, discover everything you need to make this spring unforgettable.</p><p>Offers are available for a <em>limited time only</em> — don't miss out.</p>",
     "ctaText": "Shop the Sale",
     "ctaUrl": "https://example.com/spring-sale?utm_source=email&utm_medium=promo",
     "featuredOffer": {
@@ -48,7 +48,8 @@
       ]
     },
     "heroHeadline": "Welcome to the Family",
-    "bodyCopy": "Thanks for joining us. As a new member, you'll be the first to hear about exclusive deals, new arrivals, and members-only events. We're thrilled to have you.",
+    "subtitle": "You're officially one of us",
+    "bodyCopy": "<p>Thanks for joining us. As a new member, you'll be the <strong>first to hear</strong> about exclusive deals, new arrivals, and members-only events.</p><p>We're thrilled to have you along for the ride.</p>",
     "ctaText": "Explore Now",
     "ctaUrl": "https://example.com/new-member?utm_source=email&utm_medium=welcome"
   }

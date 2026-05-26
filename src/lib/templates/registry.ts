@@ -14,6 +14,7 @@ export interface TemplateFieldDefinition {
 	required: boolean;
 	binding: string; // e.g. "cf.heroHeadline" or "cf.featuredOffer"
 	model?: string; // for reference fields
+	modelId?: string; // UE component model id, e.g. "hero", "body-text", "cta"
 }
 
 export interface TemplateDefinition {

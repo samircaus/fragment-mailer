@@ -1,6 +1,6 @@
 [
   {
-    "id": "email-cf",
+    "id": "hero",
     "fields": [
       {
         "component": "text",
@@ -14,14 +14,24 @@
         "name": "subtitle",
         "label": "Subtitle",
         "valueType": "string"
-      },
+      }
+    ]
+  },
+  {
+    "id": "body-text",
+    "fields": [
       {
         "component": "richtext",
         "name": "bodyCopy",
         "label": "Body Copy",
         "valueType": "string",
         "required": true
-      },
+      }
+    ]
+  },
+  {
+    "id": "cta",
+    "fields": [
       {
         "component": "text",
         "name": "ctaText",

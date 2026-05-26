@@ -13,6 +13,7 @@ export interface UEBinding {
 	cfPath: string;    // AEM DAM path, e.g. /content/dam/campaigns/spring-promo
 	fieldName: string; // e.g. "heroHeadline"
 	fieldType: 'text' | 'richtext' | 'url' | 'reference';
+	modelId?: string;  // per-span UE model, e.g. "hero", "body-text", "cta"
 }
 
 // 1 ─────────────────────────────────────────────────────────────────────────
@@ -35,7 +36,8 @@ export function injectUEAttributes(html: string, bindings: UEBinding[]): string 
 			`data-aue-resource="${escapeAttr(aueResource)}" ` +
 			`data-aue-prop="${escapeAttr(binding.fieldName)}" ` +
 			`data-aue-type="${aueType}" ` +
-			`data-aue-label="${escapeAttr(aueLabel)}"`;
+			`data-aue-label="${escapeAttr(aueLabel)}"` +
+			(binding.modelId ? ` data-aue-model="${escapeAttr(binding.modelId)}"` : '');
 
 		result = result.replaceAll(searchPattern, replacement);
 	}

@@ -7,27 +7,32 @@
     "heroHeadline": {
       "type": "text",
       "required": true,
-      "binding": "cf.heroHeadline"
+      "binding": "cf.heroHeadline",
+      "modelId": "hero"
     },
     "subtitle": {
       "type": "text",
       "required": false,
-      "binding": "cf.subtitle"
+      "binding": "cf.subtitle",
+      "modelId": "hero"
     },
     "bodyCopy": {
       "type": "richtext",
       "required": true,
-      "binding": "cf.bodyCopy"
+      "binding": "cf.bodyCopy",
+      "modelId": "body-text"
     },
     "ctaText": {
       "type": "text",
       "required": true,
-      "binding": "cf.ctaText"
+      "binding": "cf.ctaText",
+      "modelId": "cta"
     },
     "ctaUrl": {
       "type": "url",
       "required": true,
-      "binding": "cf.ctaUrl"
+      "binding": "cf.ctaUrl",
+      "modelId": "cta"
     },
     "featuredOffer": {
       "type": "reference",

@@ -5,13 +5,36 @@
       "id": "email",
       "components": [
         {
-          "title": "Email Content Fragment",
-          "id": "email-cf",
-          "model": "email-cf",
+          "title": "Hero",
+          "id": "hero",
           "plugins": {
             "aem": {
               "cf": {
-                "name": "EmailCampaign",
+                "name": "Hero",
+                "cfModel": "EmailCampaign"
+              }
+            }
+          }
+        },
+        {
+          "title": "Body Text",
+          "id": "body-text",
+          "plugins": {
+            "aem": {
+              "cf": {
+                "name": "BodyText",
+                "cfModel": "EmailCampaign"
+              }
+            }
+          }
+        },
+        {
+          "title": "CTA",
+          "id": "cta",
+          "plugins": {
+            "aem": {
+              "cf": {
+                "name": "CTA",
                 "cfModel": "EmailCampaign"
               }
             }
