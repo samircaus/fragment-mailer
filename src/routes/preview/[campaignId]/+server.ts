@@ -15,7 +15,7 @@ import { resolve } from '$lib/render/resolve.js';
 import { compileMJML } from '$lib/render/mjml.js';
 import { injectUEAttributes, injectUEHead } from '$lib/render/inject-ue.js';
 import { validate } from '$lib/render/validate.js';
-import { getPersona, flattenPersona } from '$lib/personas/samples.js';
+import { flattenPersona, resolvePreviewPersona } from '$lib/personas/samples.js';
 import { loadCampaign } from '$lib/campaigns/registry.js';
 
 export const GET: RequestHandler = async ({ params, url, platform }) => {
@@ -24,6 +24,7 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
 
 	const { campaignId } = params;
 	const personaId = url.searchParams.get('personaId') ?? 'persona-1';
+	const personaJson = url.searchParams.get('persona');
 	const templateId = url.searchParams.get('templateId') ?? 'promo';
 
 	// Load template
@@ -54,7 +55,7 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
 	const cfContext = buildCFContext(cf.fields, definition);
 
 	// Build render context
-	const persona = getPersona(personaId);
+	const persona = resolvePreviewPersona(personaId, personaJson);
 	const flatProfile = flattenPersona(persona);
 
 	const context = {
