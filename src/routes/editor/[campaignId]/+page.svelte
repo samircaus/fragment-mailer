@@ -358,7 +358,8 @@
 				mjmlChildren.forEach((child, i) => walk(child, depth + 1, `${path}.${i}`));
 			}
 
-			[...doc.body.children].forEach((child, i) => {
+			const wrapper = doc.body.querySelector('x-root') ?? doc.body;
+			[...wrapper.children].forEach((child, i) => {
 				const tag = child.tagName.toLowerCase();
 				if (tag.startsWith('mj-') || tag === 'mjml') walk(child, 0, String(i));
 			});
@@ -390,42 +391,90 @@
 		addMenuNode = { node, x: rect.right + 6, y: rect.top };
 	}
 
+	/** Find the index of `</tag>` that closes the element at `targetPath` (matches buildTree paths). */
+	function findClosingTagIndexForPath(mjml: string, targetPath: string): number {
+		const tagRe = /<\/?([a-z][a-z0-9-]*)\b[^>]*\/?>/gi;
+		type Frame = { tag: string; path: string; mjChildIndex: number };
+		const stack: Frame[] = [];
+		let rootMjIndex = 0;
+
+		let match: RegExpExecArray | null;
+		while ((match = tagRe.exec(mjml))) {
+			const full = match[0];
+			const tag = match[1].toLowerCase();
+			if (!tag.startsWith('mj-') && tag !== 'mjml') continue;
+
+			const isClose = full.startsWith('</');
+			const selfClosing = !isClose && /\/>\s*$/.test(full);
+
+			if (isClose) {
+				for (let i = stack.length - 1; i >= 0; i--) {
+					if (stack[i].tag !== tag) continue;
+					const frame = stack[i];
+					if (frame.path === targetPath) return match.index;
+					stack.splice(i, 1);
+					break;
+				}
+				continue;
+			}
+
+			const parent = stack[stack.length - 1];
+			const path = parent ? `${parent.path}.${parent.mjChildIndex++}` : String(rootMjIndex++);
+
+			if (selfClosing) continue;
+
+			stack.push({ tag, path, mjChildIndex: 0 });
+		}
+
+		return -1;
+	}
+
+	async function focusEditorAt(position: number) {
+		await tick();
+		const el = textareaEl;
+		if (!el) return;
+		el.focus();
+		el.setSelectionRange(position, position);
+		const lineNumber = mjmlCode.slice(0, position).split('\n').length - 1;
+		const lineHeight = Number.parseInt(getComputedStyle(el).lineHeight, 10) || 20;
+		el.scrollTop = Math.max(0, lineNumber * lineHeight - el.clientHeight / 2);
+	}
+
 	function insertChildComponent(node: FlatNode, snippet: string) {
 		addMenuNode = null;
 
-		const closeTag = `</${node.tag}>`;
-		let count = 0;
-		let searchFrom = 0;
+		const insertIdx = findClosingTagIndexForPath(mjmlCode, node.path);
 		let newCode = mjmlCode;
-		let inserted = false;
+		let cursorAt = newCode.length;
 
-		while (true) {
-			const idx = newCode.indexOf(closeTag, searchFrom);
-			if (idx === -1) break;
-			count++;
-			if (count === node.closingOccurrence) {
-				// Match the existing indentation at this line
-				const lineStart = newCode.lastIndexOf('\n', idx - 1) + 1;
-				const existingIndent = newCode.slice(lineStart, idx).match(/^(\s*)/)?.[1] ?? '';
-				const childIndent = existingIndent + '  ';
-				const indentedSnippet = snippet
-					.split('\n')
-					.map((line) => childIndent + line)
-					.join('\n');
-				newCode = newCode.slice(0, idx) + indentedSnippet + '\n' + newCode.slice(idx);
-				inserted = true;
-				break;
-			}
-			searchFrom = idx + closeTag.length;
-		}
-
-		if (!inserted) {
-			newCode = mjmlCode + '\n' + snippet;
+		if (insertIdx >= 0) {
+			const lineStart = newCode.lastIndexOf('\n', insertIdx - 1) + 1;
+			const existingIndent = newCode.slice(lineStart, insertIdx).match(/^(\s*)/)?.[1] ?? '';
+			const childIndent = existingIndent + '  ';
+			const indentedSnippet = snippet
+				.split('\n')
+				.map((line) => childIndent + line)
+				.join('\n');
+			newCode = newCode.slice(0, insertIdx) + indentedSnippet + '\n' + newCode.slice(insertIdx);
+			cursorAt = insertIdx + indentedSnippet.length + 1;
+		} else {
+			newCode = `${mjmlCode}\n${snippet}`;
+			cursorAt = newCode.length;
 		}
 
 		mjmlCode = newCode;
 		isDirty = true;
-		activeTab = 'code';
+
+		const next = new Set(collapsedPaths);
+		const parts = node.path.split('.');
+		for (let i = 1; i <= parts.length; i++) {
+			next.delete(parts.slice(0, i).join('.'));
+		}
+		collapsedPaths = next;
+
+		if (activeTab === 'code') {
+			void focusEditorAt(cursorAt);
+		}
 	}
 
 	function selectTemplate(id: string) {
@@ -514,7 +563,9 @@
 
 <!-- Close floating menus on outside click -->
 <svelte:window
-	onclick={() => {
+	onclick={(e) => {
+		const target = e.target;
+		if (target instanceof Element && target.closest('.add-menu, .add-child-btn')) return;
 		addMenuNode = null;
 		templatePickerOpen = false;
 		personaPickerOpen = false;
@@ -851,7 +902,9 @@
 											<span class="node-tag node-{nodeColor(node.tag)}">{node.tag}</span>
 											{#if (CHILD_COMPONENTS[node.tag]?.length ?? 0) > 0}
 												<button
+													type="button"
 													class="add-child-btn"
+													onmousedown={(e) => e.stopPropagation()}
 													onclick={(e) => openAddMenu(e, node)}
 													title={`Add child to <${node.tag}>`}
 												>+</button>
@@ -859,25 +912,6 @@
 										</div>
 									{/if}
 								{/each}
-							</div>
-
-							<!-- Quick insert palette -->
-							<div class="palette">
-								<div class="palette-label">Quick insert into mj-column</div>
-								<div class="palette-chips">
-									{#each CHILD_COMPONENTS['mj-column'] ?? [] as opt}
-										<button
-											class="palette-chip"
-											onclick={() => {
-												const colNode = treeNodes.find((n) => n.tag === 'mj-column');
-												if (colNode) insertChildComponent(colNode, opt.snippet);
-											}}
-											title={`Insert <${opt.tag}>`}
-										>
-											{opt.label}
-										</button>
-									{/each}
-								</div>
 							</div>
 						{/if}
 					</div>
@@ -1006,6 +1040,7 @@
 		class="add-menu"
 		style:left={`${addMenuNode.x}px`}
 		style:top={`${addMenuNode.y}px`}
+		onmousedown={(e) => e.stopPropagation()}
 		onclick={(e) => e.stopPropagation()}
 	>
 		<div class="add-menu-title">Add to &lt;{addMenuNode.node.tag}&gt;</div>
@@ -1756,47 +1791,6 @@
 	.add-child-btn:hover {
 		background: #ededfc;
 		border-color: #5b5bd6;
-	}
-
-	/* Quick insert palette */
-	.palette {
-		border-top: 1px solid #f4f4f5;
-		padding: 10px 12px;
-		background: #fff;
-		flex-shrink: 0;
-	}
-
-	.palette-label {
-		font-size: 10px;
-		font-weight: 700;
-		text-transform: uppercase;
-		letter-spacing: 0.5px;
-		color: #a1a1aa;
-		margin-bottom: 6px;
-	}
-
-	.palette-chips {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 5px;
-	}
-
-	.palette-chip {
-		height: 24px;
-		padding: 0 10px;
-		border: 1px solid #e4e4e7;
-		border-radius: 4px;
-		background: #fafafa;
-		font-size: 11px;
-		font-weight: 500;
-		color: #3f3f46;
-		cursor: pointer;
-		transition: background 0.1s, border-color 0.1s, color 0.1s;
-	}
-	.palette-chip:hover {
-		background: #ededfc;
-		border-color: #5b5bd6;
-		color: #5b5bd6;
 	}
 
 	/* Footer */
