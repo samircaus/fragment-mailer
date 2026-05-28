@@ -19,6 +19,7 @@ import {
 	injectUEBody,
 	instrumentCFOutputTokens
 } from '$lib/render/inject-ue.js';
+import { buildUEBindings } from '$lib/render/ue-bindings.js';
 import { getPersona, flattenPersona } from '$lib/personas/samples.js';
 
 // Zod v4: z.record() requires both key and value schemas.
@@ -93,24 +94,12 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 	// Inject UE attributes (preview mode only)
 	let finalHtml = compileResult.html;
 	if (mode === 'preview') {
-		const bindings = Object.entries(definition.fields).map(([fieldId, fieldDef]) => ({
-			fieldPath: fieldDef.binding,
-			cfPath: resolveBindingCFPath(fieldDef.binding, cf.path, cf.fields),
-			fieldName: fieldId,
-			fieldType: fieldDef.type as 'text' | 'richtext' | 'url' | 'reference',
-			modelId: fieldDef.modelId
-		}));
-		const knownBindings = new Set(bindings.map((binding) => binding.fieldPath));
-		for (const fieldPath of discoveredBindings) {
-			if (knownBindings.has(fieldPath)) continue;
-			bindings.push({
-				fieldPath,
-				cfPath: resolveBindingCFPath(fieldPath, cf.path, cf.fields),
-				fieldName: bindingFieldName(fieldPath),
-				fieldType: 'text',
-				modelId: undefined
-			});
-		}
+		const bindings = buildUEBindings({
+			definition,
+			discoveredBindings,
+			defaultCfPath: cf.path,
+			cfFields: cf.fields
+		});
 		finalHtml = injectUEAttributes(finalHtml, bindings);
 		finalHtml = injectUEBody(finalHtml, cf.path);
 	}
@@ -150,23 +139,3 @@ function buildCFContext(
 	return context;
 }
 
-function bindingFieldName(fieldPath: string): string {
-	const parts = fieldPath.split('.');
-	return parts[parts.length - 1] ?? fieldPath;
-}
-
-function resolveBindingCFPath(
-	fieldPath: string,
-	defaultPath: string,
-	fields: Record<string, unknown>
-): string {
-	const parts = fieldPath.split('.');
-	const rootField = parts[1];
-	if (!rootField || parts.length < 3) return defaultPath;
-	const rootValue = fields[rootField];
-	if (rootValue && typeof rootValue === 'object') {
-		const refPath = (rootValue as Record<string, unknown>)._path;
-		if (typeof refPath === 'string' && refPath) return refPath;
-	}
-	return defaultPath;
-}

@@ -20,7 +20,9 @@
       "type": "richtext",
       "required": true,
       "binding": "cf.emailCopy",
-      "modelId": "copy"
+      "renderBinding": "cf.emailCopyHtml",
+      "aueProp": "emailBody",
+      "modelId": "body-text"
     },
     "ctaLabel": {
       "type": "text",

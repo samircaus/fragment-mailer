@@ -18,6 +18,7 @@ import {
 	injectUEHead,
 	instrumentCFOutputTokens
 } from '$lib/render/inject-ue.js';
+import { buildUEBindings } from '$lib/render/ue-bindings.js';
 import { validate } from '$lib/render/validate.js';
 import { flattenPersona, resolvePreviewPersona } from '$lib/personas/samples.js';
 import { getCampaignWithCF } from '$lib/campaigns/service.js';
@@ -78,25 +79,12 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
 		);
 	}
 
-	// Inject UE attributes onto each CF-bound span
-	const bindings = Object.entries(definition.fields).map(([fieldId, fieldDef]) => ({
-		fieldPath: fieldDef.binding,
-		cfPath: resolveBindingCFPath(fieldDef.binding, cf.path, cf.fields),
-		fieldName: fieldId,
-		fieldType: fieldDef.type as 'text' | 'richtext' | 'url' | 'reference',
-		modelId: fieldDef.modelId
-	}));
-	const knownBindings = new Set(bindings.map((binding) => binding.fieldPath));
-	for (const fieldPath of discoveredBindings) {
-		if (knownBindings.has(fieldPath)) continue;
-		bindings.push({
-			fieldPath,
-			cfPath: resolveBindingCFPath(fieldPath, cf.path, cf.fields),
-			fieldName: bindingFieldName(fieldPath),
-			fieldType: inferBindingFieldType(fieldPath, definition),
-			modelId: undefined
-		});
-	}
+	const bindings = buildUEBindings({
+		definition,
+		discoveredBindings,
+		defaultCfPath: cf.path,
+		cfFields: cf.fields
+	});
 	let html = injectUEAttributes(compileResult.html, bindings);
 	html = injectUEBody(html, cf.path);
 	html = injectUEHead(
@@ -170,34 +158,3 @@ function normalizeCompanyName(raw: string | null): string {
 	return trimmed ? trimmed.slice(0, 120) : 'Acme Corp';
 }
 
-function bindingFieldName(fieldPath: string): string {
-	const parts = fieldPath.split('.');
-	return parts[parts.length - 1] ?? fieldPath;
-}
-
-function inferBindingFieldType(
-	fieldPath: string,
-	definition: TemplateDefinition
-): 'text' | 'richtext' | 'url' | 'reference' {
-	const parts = fieldPath.split('.');
-	const rootField = parts[1];
-	const fieldDef = rootField ? definition.fields[rootField] : undefined;
-	if (parts.length === 2 && fieldDef) return fieldDef.type;
-	return parts.length === 2 ? 'text' : 'text';
-}
-
-function resolveBindingCFPath(
-	fieldPath: string,
-	defaultPath: string,
-	fields: Record<string, unknown>
-): string {
-	const parts = fieldPath.split('.');
-	const rootField = parts[1];
-	if (!rootField || parts.length < 3) return defaultPath;
-	const rootValue = fields[rootField];
-	if (rootValue && typeof rootValue === 'object') {
-		const refPath = (rootValue as Record<string, unknown>)._path;
-		if (typeof refPath === 'string' && refPath) return refPath;
-	}
-	return defaultPath;
-}
