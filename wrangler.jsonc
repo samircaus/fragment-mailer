@@ -37,7 +37,15 @@
 	 * https://developers.cloudflare.com/workers/configuration/secrets/
 	 */
 	"vars": {
+		"MOCK_MODE": "false",
+		"AEM_TIER": "author",
+		"AEM_BASE_URL": "https://author-p125048-e1847106.adobeaemcloud.com",
+		"AEM_CAMPAIGNS_PATH": "/content/dam/email/en/campaigns",
+		"AEM_FETCH_MODE": "openapi",
+		"IMS_CLIENT_ID": "bd76dfd2b8ef4b21a44a27c354495826",
 		"IMS_ORG_ID": "CDA11DC661266AB70A495F8B@AdobeOrg",
+		"IMS_HOST": "ims-na1.adobelogin.com",
+		"IMS_SCOPES": "openid,AdobeID,aem.folders,aem.assets.author,aem.fragments.management",
 		"AJO_SANDBOX": "prod"
 	}
 	/**
