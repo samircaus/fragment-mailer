@@ -29,11 +29,11 @@
         <mj-text font-size="32px" font-weight="bold" color="#1A1A1A" align="center" line-height="1.25">
           {{cf.heroHeadline}}
         </mj-text>
-        {{#if cf.subtitle}}
+        {% if cf.subtitle %}
         <mj-text font-size="18px" color="#555555" align="center" padding-top="8px" line-height="1.4">
           {{cf.subtitle}}
         </mj-text>
-        {{/if}}
+        {% endif %}
       </mj-column>
     </mj-section>
 
@@ -56,7 +56,7 @@
     </mj-section>
 
     <!-- ─── Featured offer (optional) ─── -->
-    {{#if cf.featuredOffer.headline}}
+    {% if cf.featuredOffer.headline %}
     <mj-section background-color="#EBF3FF" padding="32px 40px">
       <mj-column>
         <mj-text font-size="11px" color="#0265DC" align="center" text-transform="uppercase" letter-spacing="2px" font-weight="bold">
@@ -70,7 +70,7 @@
         </mj-text>
       </mj-column>
     </mj-section>
-    {{/if}}
+    {% endif %}
 
     <!-- ─── CTA ─── -->
     <mj-section background-color="#FFFFFF" padding="32px 40px">

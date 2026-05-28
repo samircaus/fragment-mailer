@@ -32,7 +32,7 @@
       </mj-column>
     </mj-section>
 
-    {{#if cf.bannerImageUrl}}
+    {% if cf.bannerImageUrl %}
     <mj-section background-color="#FFFFFF" padding="0 24px 20px">
       <mj-column>
         <mj-image
@@ -43,7 +43,7 @@
         />
       </mj-column>
     </mj-section>
-    {{/if}}
+    {% endif %}
 
     <mj-section background-color="#FFFFFF" padding="0 24px 24px">
       <mj-column>
@@ -53,7 +53,7 @@
       </mj-column>
     </mj-section>
 
-    {{#if cf.ctaLink}}
+    {% if cf.ctaLink %}
     <mj-section background-color="#FFFFFF" padding="0 24px 32px">
       <mj-column>
         <mj-button href="{{cf.ctaLink}}" align="left">
@@ -61,7 +61,7 @@
         </mj-button>
       </mj-column>
     </mj-section>
-    {{/if}}
+    {% endif %}
 
     <mj-section background-color="#F5F5F7" padding="20px 24px">
       <mj-column>

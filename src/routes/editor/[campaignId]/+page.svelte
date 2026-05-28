@@ -90,6 +90,7 @@
 	let iframeKey = $state(0);
 	let iframeEl = $state<HTMLIFrameElement | null>(null);
 	let exportStatus = $state<'idle' | 'exporting' | 'done' | 'error'>('idle');
+	let exportCfMode = $state<'preserve-refs' | 'baked-content'>('preserve-refs');
 
 	// Textarea ref (for Tab/cursor handling)
 	let textareaEl = $state<HTMLTextAreaElement | null>(null);
@@ -313,7 +314,8 @@
 			const params = new URLSearchParams({
 				campaignId,
 				personaId: selectedPersonaId,
-				companyName: selectedCompanyName
+				companyName: selectedCompanyName,
+				cfMode: exportCfMode
 			});
 			const res = await fetch(`/api/export?${params.toString()}`);
 			if (!res.ok) throw new Error(`Export failed: ${res.status}`);
@@ -611,6 +613,13 @@
 		<div class="topbar-divider"></div>
 		<div class="campaign-name">{campaign?.name ?? campaignId}</div>
 		<div class="topbar-spacer"></div>
+		<label class="export-mode">
+			<span>CF mode</span>
+			<select bind:value={exportCfMode} disabled={exportStatus === 'exporting'}>
+				<option value="preserve-refs">Preserve refs</option>
+				<option value="baked-content">Baked content</option>
+			</select>
+		</label>
 		<button
 			class="export-btn"
 			class:loading={exportStatus === 'exporting'}
@@ -1208,6 +1217,29 @@
 
 	.topbar-spacer {
 		flex: 1;
+	}
+
+	.export-mode {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		font-size: 11px;
+		font-weight: 600;
+		color: #a1a1aa;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+	}
+
+	.export-mode select {
+		height: 30px;
+		border: 1px solid #3f3f46;
+		border-radius: 6px;
+		background: #18181b;
+		color: #e4e4e7;
+		padding: 0 8px;
+		font-size: 12px;
+		text-transform: none;
+		letter-spacing: 0;
 	}
 
 	.export-btn {

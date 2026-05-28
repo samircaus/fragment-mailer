@@ -1,116 +1,240 @@
-// Template token resolver. Handles the three-namespace token system:
+// AJO-flavored Liquid-ish resolver.
+// Supported syntax:
+//   {{ expression }}
+//   {% if cond %}...{% else %}...{% endif %}
+//   {% let varName = expression %}
+//   {{ expression | default: 'fallback' }}
 //
-//   {{cf.fieldName}}             — primary CF field
-//   {{cf.refName.fieldName}}     — referenced CF field (one level deep)
-//   {{profile.person.name.firstName}} — AJO send-time token; preserved in export mode
-//   {{static.year}}              — resolved at build/render time
-//
-// Conditional blocks:
-//   {{#if cf.fieldName}}...{{else}}...{{/if}}
-//
-// Choice: custom resolver instead of Handlebars to avoid the dependency and keep
-// the token grammar minimal. The syntax is a strict subset of Handlebars.
-// If the grammar grows (partials, each, nested ifs), migrate to handlebars proper.
+// Backward compatibility:
+//   {{#if ...}} ... {{else}} ... {{/if}}
 
 export interface RenderContext {
 	cf: Record<string, unknown>;
-	// When preserveProfile is true, {{profile.*}} tokens are left as-is for AJO.
 	profile: Record<string, unknown>;
-	preserveProfile: boolean;
 	static: Record<string, unknown>;
+	// When true, profile.* expressions are preserved verbatim.
+	preserveProfile: boolean;
 }
 
 type ResolveResult = { html: string; warnings: string[] };
 
-export function resolve(template: string, context: RenderContext): ResolveResult {
-	const warnings: string[] = [];
-
-	// Process conditionals first (before simple token substitution)
-	let html = resolveConditionals(template, context, warnings);
-
-	// Then resolve simple tokens
-	html = resolveTokens(html, context, warnings);
-
-	return { html, warnings };
+interface EvalState {
+	context: RenderContext;
+	warnings: string[];
+	vars: Record<string, unknown>;
 }
 
-// --- Conditional blocks ---
+export function resolve(template: string, context: RenderContext): ResolveResult {
+	const state: EvalState = {
+		context,
+		warnings: [],
+		vars: {}
+	};
 
-const IF_BLOCK_RE = /\{\{#if\s+([\w.]+)\}\}([\s\S]*?)\{\{\/if\}\}/g;
+	const normalizedTemplate = normalizeLegacyConditionals(template);
+	const html = renderBlock(normalizedTemplate, state);
+	return { html, warnings: state.warnings };
+}
 
-function resolveConditionals(
-	template: string,
-	context: RenderContext,
-	warnings: string[]
-): string {
-	return template.replace(IF_BLOCK_RE, (_, path: string, content: string) => {
-		const value = lookupPath(path, context, warnings, false);
-		const truthy = value !== undefined && value !== null && value !== '' && value !== false;
+function normalizeLegacyConditionals(template: string): string {
+	return template
+		.replace(/\{\{#if\s+([^}]+)\}\}/g, '{% if $1 %}')
+		.replace(/\{\{else\}\}/g, '{% else %}')
+		.replace(/\{\{\/if\}\}/g, '{% endif %}');
+}
 
-		// Split on {{else}} if present
-		const elseIdx = content.indexOf('{{else}}');
-		if (elseIdx !== -1) {
-			return truthy ? content.slice(0, elseIdx) : content.slice(elseIdx + 8);
-		}
-		return truthy ? content : '';
+function renderBlock(input: string, state: EvalState): string {
+	const withoutLets = applyLetStatements(input, state);
+	const withConditionals = resolveIfBlocks(withoutLets, state);
+	return resolveOutputTokens(withConditionals, state);
+}
+
+function applyLetStatements(input: string, state: EvalState): string {
+	const LET_RE = /\{%\s*let\s+([A-Za-z_]\w*)\s*=\s*([\s\S]*?)\s*%\}/g;
+	return input.replace(LET_RE, (_full, varName: string, rawExpr: string) => {
+		const { value } = evaluateExpression(rawExpr.trim(), state);
+		state.vars[varName] = value;
+		return '';
 	});
 }
 
-// --- Simple tokens ---
+function resolveIfBlocks(input: string, state: EvalState): string {
+	let output = '';
+	let cursor = 0;
 
-// Matches {{some.dotted.path}} but not {{#if}}, {{else}}, {{/if}}
-const TOKEN_RE = /\{\{([\w][\w.]*)\}\}/g;
+	for (;;) {
+		const start = input.indexOf('{% if', cursor);
+		if (start === -1) {
+			output += input.slice(cursor);
+			break;
+		}
 
-function resolveTokens(template: string, context: RenderContext, warnings: string[]): string {
-	return template.replace(TOKEN_RE, (match, path: string) => {
-		const value = lookupPath(path, context, warnings, true);
-		if (value === undefined) return match; // leave unresolved token visible
+		output += input.slice(cursor, start);
+
+		const openEnd = input.indexOf('%}', start);
+		if (openEnd === -1) {
+			output += input.slice(start);
+			break;
+		}
+
+		const condExpr = input.slice(start + 5, openEnd).trim();
+		const { closeStart, closeEnd, elseStart, elseEnd } = findIfBlockBounds(input, openEnd + 2);
+		if (closeStart === -1 || closeEnd === -1) {
+			output += input.slice(start);
+			break;
+		}
+
+		const thenPart = input.slice(openEnd + 2, elseStart === -1 ? closeStart : elseStart);
+		const elsePart = elseStart === -1 || elseEnd === -1 ? '' : input.slice(elseEnd, closeStart);
+		const cond = evaluateCondition(condExpr, state);
+		output += renderBlock(cond ? thenPart : elsePart, state);
+
+		cursor = closeEnd;
+	}
+
+	return output;
+}
+
+function findIfBlockBounds(
+	input: string,
+	searchFrom: number
+): { closeStart: number; closeEnd: number; elseStart: number; elseEnd: number } {
+	let depth = 1;
+	let cursor = searchFrom;
+	let elseStart = -1;
+	let elseEnd = -1;
+
+	while (cursor < input.length) {
+		const tagStart = input.indexOf('{%', cursor);
+		if (tagStart === -1) break;
+		const tagEnd = input.indexOf('%}', tagStart);
+		if (tagEnd === -1) break;
+
+		const tagBody = input.slice(tagStart + 2, tagEnd).trim();
+		if (tagBody.startsWith('if ')) {
+			depth += 1;
+		} else if (tagBody === 'endif') {
+			depth -= 1;
+			if (depth === 0) {
+				return { closeStart: tagStart, closeEnd: tagEnd + 2, elseStart, elseEnd };
+			}
+		} else if (tagBody === 'else' && depth === 1 && elseStart === -1) {
+			elseStart = tagStart;
+			elseEnd = tagEnd + 2;
+		}
+
+		cursor = tagEnd + 2;
+	}
+
+	return { closeStart: -1, closeEnd: -1, elseStart: -1, elseEnd: -1 };
+}
+
+function resolveOutputTokens(input: string, state: EvalState): string {
+	const OUTPUT_RE = /\{\{\s*([\s\S]*?)\s*\}\}/g;
+	return input.replace(OUTPUT_RE, (full, expr: string) => {
+		const { value, preserve } = evaluateExpression(expr.trim(), state, true);
+		if (preserve) return full;
+		if (value === undefined) return full;
 		if (value === null) return '';
 		return String(value);
 	});
 }
 
-// --- Path resolution ---
+function evaluateCondition(expr: string, state: EvalState): boolean {
+	const { value } = evaluateExpression(expr, state);
+	return value !== undefined && value !== null && value !== '' && value !== false;
+}
 
-function lookupPath(
-	path: string,
-	context: RenderContext,
-	warnings: string[],
+function evaluateExpression(
+	expr: string,
+	state: EvalState,
+	warnOnMissing = false
+): { value: unknown; preserve: boolean } {
+	const [baseRaw, ...filterParts] = expr.split('|').map((part) => part.trim());
+	const baseResult = resolveTerm(baseRaw, state, warnOnMissing);
+	if (baseResult.preserve) return baseResult;
+
+	let value = baseResult.value;
+	for (const filterPart of filterParts) {
+		if (!filterPart) continue;
+		value = applyFilter(value, filterPart, state);
+	}
+
+	return { value, preserve: false };
+}
+
+function resolveTerm(
+	term: string,
+	state: EvalState,
 	warnOnMissing: boolean
-): unknown {
-	const [ns, ...rest] = path.split('.');
+): { value: unknown; preserve: boolean } {
+	if (!term) return { value: undefined, preserve: false };
+
+	if ((term.startsWith("'") && term.endsWith("'")) || (term.startsWith('"') && term.endsWith('"'))) {
+		return { value: term.slice(1, -1), preserve: false };
+	}
+	if (term === 'true') return { value: true, preserve: false };
+	if (term === 'false') return { value: false, preserve: false };
+	if (term === 'null' || term === 'nil') return { value: null, preserve: false };
+	if (/^-?\d+(\.\d+)?$/.test(term)) return { value: Number(term), preserve: false };
+
+	if (term in state.vars) {
+		return { value: state.vars[term], preserve: false };
+	}
+
+	const [ns, ...rest] = term.split('.');
 	const fieldPath = rest.join('.');
 
 	if (ns === 'profile') {
-		if (context.preserveProfile) {
-			// Return undefined so resolveTokens leaves the token verbatim for AJO.
-			return undefined;
+		if (state.context.preserveProfile) {
+			return { value: undefined, preserve: true };
 		}
-		// Try direct key lookup first (handles flat objects like {'person.name.firstName': 'Sarah'})
-		// then fall back to deep traversal (handles nested objects).
-		const direct = context.profile[fieldPath];
-		if (direct !== undefined) return direct;
-		return getValueAtPath(context.profile, fieldPath);
-	}
-
-	if (ns === 'static') {
-		const value = getValueAtPath(context.static, fieldPath);
-		if (value === undefined && warnOnMissing) {
-			warnings.push(`Unresolved static token: {{static.${fieldPath}}}`);
-		}
-		return value;
+		const direct = state.context.profile[fieldPath];
+		return { value: direct !== undefined ? direct : getValueAtPath(state.context.profile, fieldPath), preserve: false };
 	}
 
 	if (ns === 'cf') {
-		const value = getValueAtPath(context.cf, fieldPath);
+		const value = getValueAtPath(state.context.cf, fieldPath);
 		if (value === undefined && warnOnMissing) {
-			warnings.push(`Unresolved CF token: {{cf.${fieldPath}}}`);
+			state.warnings.push(`Unresolved CF token: {{${term}}}`);
 		}
-		return value;
+		return { value, preserve: false };
 	}
 
-	// Unknown namespace — leave as-is
-	return undefined;
+	if (ns === 'static') {
+		const value = getValueAtPath(state.context.static, fieldPath);
+		if (value === undefined && warnOnMissing) {
+			state.warnings.push(`Unresolved static token: {{${term}}}`);
+		}
+		return { value, preserve: false };
+	}
+
+	const fromContext = getValueAtPath(
+		{
+			...state.vars,
+			...state.context.cf,
+			profile: state.context.profile,
+			static: state.context.static,
+			cf: state.context.cf
+		},
+		term
+	);
+	return { value: fromContext, preserve: false };
+}
+
+function applyFilter(input: unknown, filterPart: string, state: EvalState): unknown {
+	const [nameRaw, ...argRaw] = filterPart.split(':');
+	const name = nameRaw.trim();
+	const argText = argRaw.join(':').trim();
+
+	if (name === 'default') {
+		const fallbackExpr = argText || "''";
+		const fallback = evaluateExpression(fallbackExpr, state).value;
+		return input === undefined || input === null || input === '' ? fallback : input;
+	}
+
+	// Unknown filters are currently no-op.
+	return input;
 }
 
 function getValueAtPath(obj: Record<string, unknown>, path: string): unknown {

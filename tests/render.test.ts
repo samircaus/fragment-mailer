@@ -62,10 +62,7 @@ describe('resolve — simple tokens', () => {
 
 describe('resolve — conditional blocks', () => {
 	it('renders the then-branch when the field is truthy', () => {
-		const { html } = resolve(
-			'{{#if cf.subtitle}}<p>{{cf.subtitle}}</p>{{/if}}',
-			BASE_CONTEXT
-		);
+		const { html } = resolve('{% if cf.subtitle %}<p>{{cf.subtitle}}</p>{% endif %}', BASE_CONTEXT);
 		expect(html).toBe('<p>Up to 40% off</p>');
 	});
 
@@ -74,7 +71,7 @@ describe('resolve — conditional blocks', () => {
 			...BASE_CONTEXT,
 			cf: { ...BASE_CONTEXT.cf, subtitle: undefined }
 		};
-		const { html } = resolve('{{#if cf.subtitle}}<p>{{cf.subtitle}}</p>{{/if}}', ctx);
+		const { html } = resolve('{% if cf.subtitle %}<p>{{cf.subtitle}}</p>{% endif %}', ctx);
 		expect(html).toBe('');
 	});
 
@@ -83,21 +80,18 @@ describe('resolve — conditional blocks', () => {
 			...BASE_CONTEXT,
 			cf: { ...BASE_CONTEXT.cf, subtitle: undefined }
 		};
-		const { html } = resolve('{{#if cf.subtitle}}YES{{else}}NO{{/if}}', ctx);
+		const { html } = resolve('{% if cf.subtitle %}YES{% else %}NO{% endif %}', ctx);
 		expect(html).toBe('NO');
 	});
 
 	it('renders the then-branch when the field is a non-empty string', () => {
 		const ctx: RenderContext = { ...BASE_CONTEXT, cf: { ...BASE_CONTEXT.cf, subtitle: 'Sale!' } };
-		const { html } = resolve('{{#if cf.subtitle}}YES{{else}}NO{{/if}}', ctx);
+		const { html } = resolve('{% if cf.subtitle %}YES{% else %}NO{% endif %}', ctx);
 		expect(html).toBe('YES');
 	});
 
 	it('handles a nested cf reference in a conditional', () => {
-		const { html } = resolve(
-			'{{#if cf.featuredOffer.headline}}<h2>{{cf.featuredOffer.headline}}</h2>{{/if}}',
-			BASE_CONTEXT
-		);
+		const { html } = resolve('{% if cf.featuredOffer.headline %}<h2>{{cf.featuredOffer.headline}}</h2>{% endif %}', BASE_CONTEXT);
 		expect(html).toBe('<h2>Bundle Deal</h2>');
 	});
 });
@@ -109,5 +103,22 @@ describe('resolve — multiple tokens', () => {
 			BASE_CONTEXT
 		);
 		expect(html).toBe('Spring into Savings — Shop Now at https://example.com/sale');
+	});
+});
+
+describe('resolve — ajo liquid features', () => {
+	it('supports let bindings', () => {
+		const { html } = resolve("{% let headline = cf.heroHeadline %}<h1>{{ headline }}</h1>", BASE_CONTEXT);
+		expect(html).toBe('<h1>Spring into Savings</h1>');
+	});
+
+	it('supports default filter', () => {
+		const { html } = resolve("{{ cf.nonExistentField | default: 'fallback value' }}", BASE_CONTEXT);
+		expect(html).toBe('fallback value');
+	});
+
+	it('keeps backward-compatible handlebars if syntax', () => {
+		const { html } = resolve('{{#if cf.subtitle}}YES{{else}}NO{{/if}}', BASE_CONTEXT);
+		expect(html).toBe('YES');
 	});
 });

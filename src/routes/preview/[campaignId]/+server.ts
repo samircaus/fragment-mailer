@@ -11,7 +11,13 @@ import { loadTemplate } from '$lib/templates/registry.js';
 import type { TemplateEntry, TemplateDefinition } from '$lib/templates/registry.js';
 import { resolve } from '$lib/render/resolve.js';
 import { compileMJML } from '$lib/render/mjml.js';
-import { injectUEAttributes, injectUEHead } from '$lib/render/inject-ue.js';
+import {
+	collectCFOutputBindings,
+	injectUEAttributes,
+	injectUEBody,
+	injectUEHead,
+	instrumentCFOutputTokens
+} from '$lib/render/inject-ue.js';
 import { validate } from '$lib/render/validate.js';
 import { flattenPersona, resolvePreviewPersona } from '$lib/personas/samples.js';
 import { getCampaignWithCF } from '$lib/campaigns/service.js';
@@ -56,8 +62,12 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
 		static: buildStaticContext(companyName)
 	};
 
+	// Instrument {{cf.*}} output tokens first, then resolve values.
+	const instrumentedMJML = instrumentCFOutputTokens(mjml);
+	const discoveredBindings = collectCFOutputBindings(mjml);
+
 	// Resolve tokens
-	const { html: resolvedMJML, warnings: resolveWarnings } = resolve(mjml, context);
+	const { html: resolvedMJML, warnings: resolveWarnings } = resolve(instrumentedMJML, context);
 
 	// Compile MJML → HTML
 	const compileResult = await compileMJML(resolvedMJML);
@@ -71,12 +81,24 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
 	// Inject UE attributes onto each CF-bound span
 	const bindings = Object.entries(definition.fields).map(([fieldId, fieldDef]) => ({
 		fieldPath: fieldDef.binding,
-		cfPath: cf.path,
+		cfPath: resolveBindingCFPath(fieldDef.binding, cf.path, cf.fields),
 		fieldName: fieldId,
 		fieldType: fieldDef.type as 'text' | 'richtext' | 'url' | 'reference',
 		modelId: fieldDef.modelId
 	}));
+	const knownBindings = new Set(bindings.map((binding) => binding.fieldPath));
+	for (const fieldPath of discoveredBindings) {
+		if (knownBindings.has(fieldPath)) continue;
+		bindings.push({
+			fieldPath,
+			cfPath: resolveBindingCFPath(fieldPath, cf.path, cf.fields),
+			fieldName: bindingFieldName(fieldPath),
+			fieldType: inferBindingFieldType(fieldPath, definition),
+			modelId: undefined
+		});
+	}
 	let html = injectUEAttributes(compileResult.html, bindings);
+	html = injectUEBody(html, cf.path, definition.cfModel || 'email');
 	html = injectUEHead(
 		html,
 		env?.AEM_BASE_URL ?? 'https://author-p00000-e00000.adobeaemcloud.com',
@@ -146,4 +168,36 @@ function buildStaticContext(companyName: string): Record<string, unknown> {
 function normalizeCompanyName(raw: string | null): string {
 	const trimmed = raw?.trim();
 	return trimmed ? trimmed.slice(0, 120) : 'Acme Corp';
+}
+
+function bindingFieldName(fieldPath: string): string {
+	const parts = fieldPath.split('.');
+	return parts[parts.length - 1] ?? fieldPath;
+}
+
+function inferBindingFieldType(
+	fieldPath: string,
+	definition: TemplateDefinition
+): 'text' | 'richtext' | 'url' | 'reference' {
+	const parts = fieldPath.split('.');
+	const rootField = parts[1];
+	const fieldDef = rootField ? definition.fields[rootField] : undefined;
+	if (parts.length === 2 && fieldDef) return fieldDef.type;
+	return parts.length === 2 ? 'text' : 'text';
+}
+
+function resolveBindingCFPath(
+	fieldPath: string,
+	defaultPath: string,
+	fields: Record<string, unknown>
+): string {
+	const parts = fieldPath.split('.');
+	const rootField = parts[1];
+	if (!rootField || parts.length < 3) return defaultPath;
+	const rootValue = fields[rootField];
+	if (rootValue && typeof rootValue === 'object') {
+		const refPath = (rootValue as Record<string, unknown>)._path;
+		if (typeof refPath === 'string' && refPath) return refPath;
+	}
+	return defaultPath;
 }

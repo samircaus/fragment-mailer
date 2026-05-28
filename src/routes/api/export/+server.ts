@@ -14,6 +14,7 @@ import { loadTemplate } from '$lib/templates/registry.js';
 import type { TemplateEntry, TemplateDefinition } from '$lib/templates/registry.js';
 import { resolve } from '$lib/render/resolve.js';
 import { compileMJML } from '$lib/render/mjml.js';
+import { rewriteCfRefsForAjo, wrapAjoControlTagsForMjml } from '$lib/render/ajo-export.js';
 import { getPersona, flattenPersona } from '$lib/personas/samples.js';
 import { buildManifest } from '$lib/manifest/builder.js';
 import { getCampaignWithCF } from '$lib/campaigns/service.js';
@@ -24,6 +25,7 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 	const campaignId = url.searchParams.get('campaignId');
 	const personaId = url.searchParams.get('personaId') ?? 'persona-1';
 	const companyName = normalizeCompanyName(url.searchParams.get('companyName'));
+	const cfMode = parseCfMode(url.searchParams.get('cfMode'));
 
 	if (!campaignId) {
 		throw error(400, 'campaignId query parameter is required');
@@ -60,8 +62,11 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 	};
 
 	// Resolve + compile
-	const { html: resolvedMJML } = resolve(mjml, context);
-	const compileResult = await compileMJML(resolvedMJML, { minify: false });
+	const mjmlForCompile =
+		cfMode === 'preserve-refs'
+			? buildPreserveRefsMJML(mjml, primaryCF, context.cf)
+			: resolve(mjml, context).html;
+	const compileResult = await compileMJML(mjmlForCompile, { minify: false });
 	if (!compileResult.html) {
 		throw error(
 			500,
@@ -80,7 +85,7 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 	});
 
 	return json(
-		{ html: compileResult.html, manifest },
+		{ html: compileResult.html, manifest, cfMode },
 		{
 			headers: {
 				'Content-Disposition': `attachment; filename="${campaignId}-export.json"`
@@ -88,6 +93,32 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 		}
 	);
 };
+
+function parseCfMode(raw: string | null): 'preserve-refs' | 'baked-content' {
+	return raw === 'baked-content' ? 'baked-content' : 'preserve-refs';
+}
+
+function buildPreserveRefsMJML(
+	mjml: string,
+	primaryCF: ResolvedCFData,
+	cfFields: Record<string, unknown>
+): string {
+	const referenceFragmentIds: Record<string, string> = {};
+	for (const [fieldName, value] of Object.entries(cfFields)) {
+		if (value && typeof value === 'object') {
+			const refPath = (value as { _path?: string })._path;
+			if (typeof refPath === 'string' && refPath) {
+				referenceFragmentIds[fieldName] = refPath;
+			}
+		}
+	}
+
+	const rewritten = rewriteCfRefsForAjo(mjml, {
+		primaryFragmentId: primaryCF.path,
+		referenceFragmentIds
+	});
+	return wrapAjoControlTagsForMjml(rewritten.mjml);
+}
 
 
 async function resolveReferencedCFs(
