@@ -65,5 +65,5 @@ export const load: PageServerLoad = async ({ params, locals, cookies, url }) => 
 
 	const { data: model } = await client.getModel(fragment.model.id).catch(() => ({ data: null }));
 
-	return { fragment, model, authorHost };
+	return { fragment, model, authorHost, previewUrl: url.toString() };
 };

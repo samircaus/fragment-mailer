@@ -165,8 +165,35 @@ export function normalizeCF(fragment: CFFragment): ResolvedCFData {
 
 	const cleanFields: Record<string, unknown> = {};
 	for (const [key, value] of Object.entries(fields)) {
-		if (!key.startsWith('_') && key !== 'title' && key !== 'id') {
+		if (!key.startsWith('_') && key !== 'id') {
 			cleanFields[key] = value;
+		}
+	}
+
+	// Normalize common polymorphic fields so templates can render a stable shape.
+	// AEM may return rich text/image fields as strings (GraphQL) or hydrated objects (Delivery API).
+	const emailCopy = cleanFields.emailCopy;
+	if (typeof emailCopy === 'string') {
+		cleanFields.emailCopyHtml = emailCopy;
+	} else if (emailCopy && typeof emailCopy === 'object') {
+		const html = (emailCopy as Record<string, unknown>).html;
+		if (typeof html === 'string') {
+			cleanFields.emailCopyHtml = html;
+		}
+	}
+
+	const bannerImage = cleanFields.bannerImage;
+	if (typeof bannerImage === 'string') {
+		cleanFields.bannerImageUrl = bannerImage;
+	} else if (bannerImage && typeof bannerImage === 'object') {
+		const image = bannerImage as Record<string, unknown>;
+		const url =
+			(typeof image._publishUrl === 'string' && image._publishUrl) ||
+			(typeof image._dynamicUrl === 'string' && image._dynamicUrl) ||
+			(typeof image._path === 'string' && image._path) ||
+			undefined;
+		if (url) {
+			cleanFields.bannerImageUrl = url;
 		}
 	}
 

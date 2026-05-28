@@ -63,12 +63,13 @@ function itemToSummary(item: ContentFragmentItem): CampaignSummary {
 		item.modified ??
 		item._metadata?.stringMetadata?.find((m) => m.name === 'cq:lastModified')?.value ??
 		new Date().toISOString();
+	const templateId = inferTemplateId(item._model?._path, item._model?.title, item);
 
 	return {
 		id,
 		name: item.title ?? id,
 		cfPath: path,
-		templateId: 'promo',
+		templateId,
 		status: 'draft',
 		updatedAt: modified
 	};
@@ -79,12 +80,36 @@ function fragmentToCampaign(fragment: CFFragment, id: string): Campaign {
 	const path = fragment._path;
 	const slug = path.split('/').pop() ?? id;
 	const name = title ?? slug.replace(/-/g, ' ');
+	const templateId = inferTemplateId(fragment._model?._path, fragment._model?.title, fragment);
 
 	return {
 		id: slug,
 		name,
-		templateId: 'promo',
+		templateId,
 		cfPath: path,
 		status: 'draft'
 	};
+}
+
+function inferTemplateId(
+	modelPath: string | undefined,
+	modelTitle: string | undefined,
+	fragmentLike: Record<string, unknown>
+): string {
+	const modelPathLower = modelPath?.toLowerCase() ?? '';
+	const modelTitleLower = modelTitle?.toLowerCase() ?? '';
+
+	// Offer model from AEM CF structure:
+	// _model._path: /conf/.../cfm/models/offer
+	// fields: title, bannerImage, emailCopy, ctaLabel, ctaLink
+	if (modelPathLower.includes('/models/offer') || modelTitleLower === 'offer') {
+		return 'offer';
+	}
+
+	const hasOfferFields = 'emailCopy' in fragmentLike && 'bannerImage' in fragmentLike;
+	if (hasOfferFields) {
+		return 'offer';
+	}
+
+	return 'promo';
 }

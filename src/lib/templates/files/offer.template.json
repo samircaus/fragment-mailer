@@ -1,0 +1,40 @@
+{
+  "id": "offer",
+  "name": "Offer Email",
+  "version": "1.0.0",
+  "cfModel": "Offer",
+  "fields": {
+    "title": {
+      "type": "text",
+      "required": true,
+      "binding": "cf.title",
+      "modelId": "title"
+    },
+    "bannerImage": {
+      "type": "reference",
+      "model": "Image",
+      "required": false,
+      "binding": "cf.bannerImage"
+    },
+    "emailCopy": {
+      "type": "richtext",
+      "required": true,
+      "binding": "cf.emailCopy",
+      "modelId": "copy"
+    },
+    "ctaLabel": {
+      "type": "text",
+      "required": false,
+      "binding": "cf.ctaLabel",
+      "modelId": "cta"
+    },
+    "ctaLink": {
+      "type": "url",
+      "required": false,
+      "binding": "cf.ctaLink",
+      "modelId": "cta"
+    }
+  },
+  "profileTokens": [],
+  "previewSize": { "width": 600, "height": 900 }
+}

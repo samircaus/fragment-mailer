@@ -23,6 +23,7 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 
 	const campaignId = url.searchParams.get('campaignId');
 	const personaId = url.searchParams.get('personaId') ?? 'persona-1';
+	const companyName = normalizeCompanyName(url.searchParams.get('companyName'));
 
 	if (!campaignId) {
 		throw error(400, 'campaignId query parameter is required');
@@ -55,7 +56,7 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 		cf: buildCFContext(primaryCF.fields, referencedCFs),
 		profile: flatProfile,
 		preserveProfile: true, // export mode: profile tokens pass through to AJO
-		static: buildStaticContext()
+		static: buildStaticContext(companyName)
 	};
 
 	// Resolve + compile
@@ -132,12 +133,17 @@ function buildCFContext(
 	return context;
 }
 
-function buildStaticContext(): Record<string, unknown> {
+function buildStaticContext(companyName: string): Record<string, unknown> {
 	return {
 		year: new Date().getFullYear(),
-		companyName: 'Acme Corp',
+		companyName,
 		logoUrl: 'https://via.placeholder.com/120x40?text=Logo',
 		unsubscribeUrl: '{{static.unsubscribeUrl}}',
 		privacyUrl: 'https://example.com/privacy'
 	};
+}
+
+function normalizeCompanyName(raw: string | null): string {
+	const trimmed = raw?.trim();
+	return trimmed ? trimmed.slice(0, 120) : 'Acme Corp';
 }

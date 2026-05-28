@@ -7,6 +7,8 @@
 
 import promoMJML from './files/promo.mjml?raw';
 import promoDefinition from './files/promo.template.json';
+import offerMJML from './files/offer.mjml?raw';
+import offerDefinition from './files/offer.template.json';
 
 export interface TemplateFieldDefinition {
 	type: 'text' | 'richtext' | 'url' | 'reference';
@@ -37,6 +39,13 @@ const REGISTRY = new Map<string, TemplateEntry>([
 		{
 			definition: promoDefinition as TemplateDefinition,
 			mjml: promoMJML
+		}
+	],
+	[
+		'offer',
+		{
+			definition: offerDefinition as TemplateDefinition,
+			mjml: offerMJML
 		}
 	]
 ]);

@@ -62,12 +62,16 @@ export function injectUEBody(html: string, cfPath: string, modelId: string): str
 //   - UE CORS bridge script (allows UE overlay to attach)
 //   - Component model definitions (properties panel field schema)
 //   - Component definitions (groups/components registered in UE insert menu)
-export function injectUEHead(html: string, aemBaseUrl: string): string {
+export function injectUEHead(html: string, aemBaseUrl: string, previewUrl?: string): string {
 	const tags = [
+		`<link rel="preload" href="https://universal-editor-service.adobe.io/cors.js" as="script">`,
 		`<meta name="urn:adobe:aue:system:aemconnection" content="aem:${aemBaseUrl}">`,
-		`<script src="https://universal-editor-service.adobe.io/cors.js" async></script>`,
-		`<script type="application/vnd.adobe.aue.model+json" src="/component-models.json"></script>`,
-		`<script type="application/vnd.adobe.aue.component+json" src="/component-definition.json"></script>`
+		...(previewUrl
+			? [`<meta name="urn:adobe:aue:config:preview" content="${escapeAttr(previewUrl)}">`]
+			: []),
+		`<script src="https://universal-editor-service.adobe.io/cors.js"></script>`,
+		`<script type="application/vnd.adobe.aue.component+json" src="/component-definition.json"></script>`,
+		`<script type="application/vnd.adobe.aue.model+json" src="/component-models.json"></script>`
 	].join('\n');
 
 	return html.replace('</head>', `${tags}\n</head>`);

@@ -3,7 +3,7 @@
 
 	let { data }: { data: PageData } = $props();
 
-	const { fragment, model, authorHost } = data;
+	const { fragment, model, authorHost, previewUrl } = data;
 
 	// JCR path for the UE resource identifier — points at the master variation
 	const ueResource = `urn:aemconnection:${fragment.path}/jcr:content/data/master`;
@@ -13,14 +13,18 @@
 </script>
 
 <svelte:head>
+	<link rel="preload" href="https://universal-editor-service.adobe.io/cors.js" as="script" />
 	<!--
 		Tells UE which AEM instance to connect to.
 		Value format: aem:<authorHost>
 	-->
 	<meta name="urn:adobe:aue:system:aemconnection" content="aem:{authorHost}" />
+	<meta name="urn:adobe:aue:config:preview" content={previewUrl} />
 
 	<!-- Universal Editor CORS bridge — must load before any UE interaction -->
-	<script src="https://universal-editor-service.adobe.io/corslib/LATEST/index.js"></script>
+	<script src="https://universal-editor-service.adobe.io/cors.js"></script>
+	<script type="application/vnd.adobe.aue.component+json" src="/component-definition.json"></script>
+	<script type="application/vnd.adobe.aue.model+json" src="/component-models.json"></script>
 </svelte:head>
 
 <!--

@@ -56,6 +56,9 @@
 	let personaEditOpen = $state(false);
 	let personaEditJson = $state('');
 	let personaEditError = $state('');
+	const COMPANY_OPTIONS = ['Acme Corp', 'Globex Corporation', 'Wayne Enterprises', 'Stark Industries'];
+	let selectedCompanyName = $state(COMPANY_OPTIONS[0]);
+	let companyPickerOpen = $state(false);
 
 	// New template inline form
 	let showNewForm = $state(false);
@@ -307,7 +310,12 @@
 	async function handleExport() {
 		exportStatus = 'exporting';
 		try {
-			const res = await fetch(`/api/export?campaignId=${campaignId}&personaId=${selectedPersonaId}`);
+			const params = new URLSearchParams({
+				campaignId,
+				personaId: selectedPersonaId,
+				companyName: selectedCompanyName
+			});
+			const res = await fetch(`/api/export?${params.toString()}`);
 			if (!res.ok) throw new Error(`Export failed: ${res.status}`);
 			const blob = await res.blob();
 			const downloadUrl = URL.createObjectURL(blob);
@@ -507,6 +515,12 @@
 		iframeKey += 1;
 	}
 
+	function selectCompany(companyName: string) {
+		selectedCompanyName = companyName;
+		companyPickerOpen = false;
+		iframeKey += 1;
+	}
+
 	function openPersonaEdit() {
 		const persona = personas.find((p) => p.id === selectedPersonaId);
 		if (!persona) return;
@@ -552,6 +566,7 @@
 		const params = new URLSearchParams({
 			templateId: selectedTemplateId || 'promo',
 			personaId: selectedPersonaId,
+			companyName: selectedCompanyName,
 			t: String(iframeKey)
 		});
 		if (selectedPersona) {
@@ -569,6 +584,7 @@
 		addMenuNode = null;
 		templatePickerOpen = false;
 		personaPickerOpen = false;
+		companyPickerOpen = false;
 	}}
 	onkeydown={(e) => {
 		if (e.key === 'Escape' && personaEditOpen) {
@@ -629,6 +645,7 @@
 								onclick={(e) => {
 									e.stopPropagation();
 									personaPickerOpen = false;
+									companyPickerOpen = false;
 									templatePickerOpen = !templatePickerOpen;
 								}}
 								onkeydown={(e) =>
@@ -730,6 +747,7 @@
 								onclick={(e) => {
 									e.stopPropagation();
 									templatePickerOpen = false;
+									companyPickerOpen = false;
 									personaPickerOpen = !personaPickerOpen;
 								}}
 								onkeydown={(e) =>
@@ -810,6 +828,82 @@
 						>
 							Edit
 						</button>
+						<div class="dropdown company-dropdown" class:open={companyPickerOpen}>
+							<button
+								type="button"
+								class="dropdown-trigger"
+								aria-haspopup="listbox"
+								aria-expanded={companyPickerOpen}
+								onclick={(e) => {
+									e.stopPropagation();
+									templatePickerOpen = false;
+									personaPickerOpen = false;
+									companyPickerOpen = !companyPickerOpen;
+								}}
+								onkeydown={(e) =>
+									handleDropdownKeydown(e, companyPickerOpen, (open) => (companyPickerOpen = open))}
+							>
+								<span class="dropdown-value">
+									<span class="dropdown-primary">{selectedCompanyName}</span>
+								</span>
+								<svg
+									class="dropdown-chevron"
+									width="14"
+									height="14"
+									viewBox="0 0 14 14"
+									fill="none"
+									aria-hidden="true"
+								>
+									<path
+										d="M3.5 5.25 7 8.75l3.5-3.5"
+										stroke="currentColor"
+										stroke-width="1.5"
+										stroke-linecap="round"
+										stroke-linejoin="round"
+									/>
+								</svg>
+							</button>
+
+							{#if companyPickerOpen}
+								<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+								<ul class="dropdown-menu" role="listbox" onclick={(e) => e.stopPropagation()}>
+									{#each COMPANY_OPTIONS as companyName (companyName)}
+										<li role="none">
+											<button
+												type="button"
+												class="dropdown-option"
+												class:selected={selectedCompanyName === companyName}
+												role="option"
+												aria-selected={selectedCompanyName === companyName}
+												onclick={() => selectCompany(companyName)}
+											>
+												<span class="dropdown-option-body">
+													<span class="dropdown-option-primary">{companyName}</span>
+												</span>
+												{#if selectedCompanyName === companyName}
+													<svg
+														class="dropdown-option-check"
+														width="14"
+														height="14"
+														viewBox="0 0 14 14"
+														fill="none"
+														aria-hidden="true"
+													>
+														<path
+															d="M2.5 7.25 5.5 10.25 11.5 3.75"
+															stroke="currentColor"
+															stroke-width="1.5"
+															stroke-linecap="round"
+															stroke-linejoin="round"
+														/>
+													</svg>
+												{/if}
+											</button>
+										</li>
+									{/each}
+								</ul>
+							{/if}
+						</div>
 					</div>
 				</div>
 			</div>
@@ -1440,6 +1534,10 @@
 
 	.picker-action-btn.accent:hover:not(:disabled) {
 		background: #ddddf8;
+	}
+
+	.company-dropdown {
+		flex: 0 0 190px;
 	}
 
 	/* Persona edit dialog */

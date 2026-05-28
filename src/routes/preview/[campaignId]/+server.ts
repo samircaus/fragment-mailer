@@ -23,6 +23,7 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
 	const { campaignId } = params;
 	const personaId = url.searchParams.get('personaId') ?? 'persona-1';
 	const personaJson = url.searchParams.get('persona');
+	const companyName = normalizeCompanyName(url.searchParams.get('companyName'));
 
 	const campaignResult = await getCampaignWithCF(campaignId, env);
 	if (campaignResult.error || !campaignResult.data) {
@@ -42,7 +43,7 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
 	const { definition, mjml } = templateResult.data as TemplateEntry;
 
 	// Resolve referenced CFs (for the featured offer block, etc.)
-	const cfContext = buildCFContext(cf.fields, definition);
+	const cfContext = buildCFContext(cf.fields, definition, env?.AEM_BASE_URL);
 
 	// Build render context
 	const persona = resolvePreviewPersona(personaId, personaJson);
@@ -52,7 +53,7 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
 		cf: cfContext,
 		profile: flatProfile,
 		preserveProfile: false, // preview mode: resolve profile tokens from persona
-		static: buildStaticContext()
+		static: buildStaticContext(companyName)
 	};
 
 	// Resolve tokens
@@ -76,7 +77,11 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
 		modelId: fieldDef.modelId
 	}));
 	let html = injectUEAttributes(compileResult.html, bindings);
-	html = injectUEHead(html, env?.AEM_BASE_URL ?? 'https://author-p00000-e00000.adobeaemcloud.com');
+	html = injectUEHead(
+		html,
+		env?.AEM_BASE_URL ?? 'https://author-p00000-e00000.adobeaemcloud.com',
+		url.toString()
+	);
 
 	// Run validation and inject warning markers as HTML comments
 	const fieldTypes: Record<string, string> = {};
@@ -107,7 +112,8 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
 // can traverse {{cf.featuredOffer.headline}} correctly.
 function buildCFContext(
 	fields: Record<string, unknown>,
-	definition: TemplateDefinition
+	definition: TemplateDefinition,
+	assetBaseUrl?: string
 ): Record<string, unknown> {
 	const context: Record<string, unknown> = { ...fields };
 
@@ -119,15 +125,25 @@ function buildCFContext(
 		}
 	}
 
+	const imageUrl = context.bannerImageUrl;
+	if (typeof imageUrl === 'string' && imageUrl.startsWith('/') && assetBaseUrl) {
+		context.bannerImageUrl = `${assetBaseUrl.replace(/\/$/, '')}${imageUrl}`;
+	}
+
 	return context;
 }
 
-function buildStaticContext(): Record<string, unknown> {
+function buildStaticContext(companyName: string): Record<string, unknown> {
 	return {
 		year: new Date().getFullYear(),
-		companyName: 'Acme Corp',
+		companyName,
 		logoUrl: 'https://via.placeholder.com/120x40?text=Logo',
 		unsubscribeUrl: '{{static.unsubscribeUrl}}',
 		privacyUrl: 'https://example.com/privacy'
 	};
+}
+
+function normalizeCompanyName(raw: string | null): string {
+	const trimmed = raw?.trim();
+	return trimmed ? trimmed.slice(0, 120) : 'Acme Corp';
 }

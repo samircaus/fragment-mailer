@@ -22,7 +22,8 @@ const RenderRequestSchema = z.object({
 	templateId: z.string(),
 	cfPath: z.string(),
 	mode: z.enum(['preview', 'export']),
-	personaId: z.string().optional()
+	personaId: z.string().optional(),
+	companyName: z.string().optional()
 });
 
 export const POST: RequestHandler = async ({ request, platform }) => {
@@ -41,7 +42,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 		throw error(400, `Invalid request: ${parsed.error.message}`);
 	}
 
-	const { templateId, cfPath, mode, personaId } = parsed.data;
+	const { templateId, cfPath, mode, personaId, companyName } = parsed.data;
 
 	// Load template
 	const templateResult = loadTemplate(templateId);
@@ -62,10 +63,10 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 	const profileData = flattenPersona(persona);
 
 	const context = {
-		cf: cf.fields,
+		cf: buildCFContext(cf.fields, aemOpts.baseUrl),
 		profile: profileData,
 		preserveProfile: mode === 'export',
-		static: buildStaticContext()
+		static: buildStaticContext(normalizeCompanyName(companyName))
 	};
 
 	// Resolve tokens
@@ -100,12 +101,29 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 	});
 };
 
-function buildStaticContext(): Record<string, unknown> {
+function buildStaticContext(companyName: string): Record<string, unknown> {
 	return {
 		year: new Date().getFullYear(),
-		companyName: 'Acme Corp',
+		companyName,
 		logoUrl: 'https://via.placeholder.com/120x40?text=Logo',
 		unsubscribeUrl: '{{static.unsubscribeUrl}}',
 		privacyUrl: 'https://example.com/privacy'
 	};
+}
+
+function normalizeCompanyName(raw?: string): string {
+	const trimmed = raw?.trim();
+	return trimmed ? trimmed.slice(0, 120) : 'Acme Corp';
+}
+
+function buildCFContext(
+	fields: Record<string, unknown>,
+	assetBaseUrl?: string
+): Record<string, unknown> {
+	const context: Record<string, unknown> = { ...fields };
+	const imageUrl = context.bannerImageUrl;
+	if (typeof imageUrl === 'string' && imageUrl.startsWith('/') && assetBaseUrl) {
+		context.bannerImageUrl = `${assetBaseUrl.replace(/\/$/, '')}${imageUrl}`;
+	}
+	return context;
 }
