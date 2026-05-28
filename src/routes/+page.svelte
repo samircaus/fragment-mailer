@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
+
 	interface Campaign {
 		id: string;
 		name: string;
@@ -7,25 +9,44 @@
 		updatedAt: string;
 	}
 
-	const campaigns: Campaign[] = [
-		{
-			id: 'mock-campaign-1',
-			name: 'Spring Promo 2025',
-			templateId: 'promo',
-			status: 'draft',
-			updatedAt: '2025-03-15T10:30:00Z'
-		},
-		{
-			id: 'mock-campaign-2',
-			name: 'Welcome Series — Email 1',
-			templateId: 'promo',
-			status: 'draft',
-			updatedAt: '2025-02-01T09:00:00Z'
+	let campaigns = $state<Campaign[]>([]);
+	let mockMode = $state(false);
+	let isLoading = $state(true);
+	let loadError = $state('');
+
+	onMount(() => {
+		void loadCampaigns();
+	});
+
+	async function loadCampaigns() {
+		isLoading = true;
+		loadError = '';
+		try {
+			const res = await fetch('/api/campaigns');
+			if (!res.ok) {
+				let detail = '';
+				try {
+					const body = (await res.json()) as { message?: string };
+					detail = body.message ?? '';
+				} catch {
+					// ignore non-JSON error bodies
+				}
+				throw new Error(detail || `Failed to load campaigns (${res.status})`);
+			}
+			const data = (await res.json()) as { campaigns: Campaign[]; mockMode: boolean };
+			campaigns = data.campaigns;
+			mockMode = data.mockMode;
+		} catch (err) {
+			loadError = err instanceof Error ? err.message : 'Failed to load campaigns';
+		} finally {
+			isLoading = false;
 		}
-	];
+	}
 
 	function formatDate(iso: string): string {
-		return new Date(iso).toLocaleDateString('en-US', {
+		const d = new Date(iso);
+		if (Number.isNaN(d.getTime())) return '';
+		return d.toLocaleDateString('en-US', {
 			month: 'short',
 			day: 'numeric',
 			year: 'numeric'
@@ -46,24 +67,36 @@
 	<main>
 		<div class="section-header">
 			<h2>Campaigns</h2>
-			<span class="badge">Mock</span>
+			{#if mockMode}
+				<span class="badge">Mock</span>
+			{/if}
 		</div>
 
-		<div class="campaign-grid">
-			{#each campaigns as campaign}
-				<a href="/editor/{campaign.id}" class="campaign-card">
-					<div class="card-top">
-						<span class="template-chip">{campaign.templateId}</span>
-						<span class="status-chip status-{campaign.status}">{campaign.status}</span>
-					</div>
-					<h3>{campaign.name}</h3>
-					<div class="card-footer">
-						<span class="date">{formatDate(campaign.updatedAt)}</span>
-						<span class="card-arrow">Open →</span>
-					</div>
-				</a>
-			{/each}
-		</div>
+		{#if isLoading}
+			<p class="status-message">Loading campaigns…</p>
+		{:else if loadError}
+			<p class="status-message error">{loadError}</p>
+		{:else if campaigns.length === 0}
+			<p class="status-message">No campaigns found in AEM.</p>
+		{:else}
+			<div class="campaign-grid">
+				{#each campaigns as campaign}
+					<a href="/editor/{campaign.id}" class="campaign-card">
+						<div class="card-top">
+							<span class="template-chip">{campaign.templateId}</span>
+							<span class="status-chip status-{campaign.status}">{campaign.status}</span>
+						</div>
+						<h3>{campaign.name}</h3>
+						<div class="card-footer">
+							{#if campaign.updatedAt}
+								<span class="date">{formatDate(campaign.updatedAt)}</span>
+							{/if}
+							<span class="card-arrow">Open →</span>
+						</div>
+					</a>
+				{/each}
+			</div>
+		{/if}
 	</main>
 </div>
 
@@ -141,6 +174,15 @@
 		text-transform: uppercase;
 	}
 
+	.status-message {
+		font-size: 14px;
+		color: #71717a;
+	}
+
+	.status-message.error {
+		color: #b91c1c;
+	}
+
 	.campaign-grid {
 		display: grid;
 		grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
@@ -157,7 +199,10 @@
 		display: flex;
 		flex-direction: column;
 		gap: 10px;
-		transition: border-color 0.12s, box-shadow 0.12s, transform 0.12s;
+		transition:
+			border-color 0.12s,
+			box-shadow 0.12s,
+			transform 0.12s;
 	}
 
 	.campaign-card:hover {

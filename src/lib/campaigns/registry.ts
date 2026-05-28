@@ -6,6 +6,15 @@ export interface Campaign {
 	status: string;
 }
 
+export interface CampaignSummary {
+	id: string;
+	name: string;
+	cfPath: string;
+	templateId: string;
+	status: string;
+	updatedAt: string;
+}
+
 const campaigns: Record<string, Campaign> = {
 	'mock-campaign-1': {
 		id: 'mock-campaign-1',
@@ -25,4 +34,15 @@ const campaigns: Record<string, Campaign> = {
 
 export function loadCampaign(id: string): Campaign | null {
 	return campaigns[id] ?? null;
+}
+
+export function listMockCampaigns(): CampaignSummary[] {
+	return Object.values(campaigns).map((c) => ({
+		id: c.id,
+		name: c.name,
+		cfPath: c.cfPath,
+		templateId: c.templateId,
+		status: c.status,
+		updatedAt: '2025-03-15T10:30:00Z'
+	}));
 }

@@ -5,7 +5,10 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 
-import { fetchCF, normalizeCF } from '$lib/aem/client.js';
+import { normalizeCF } from '$lib/aem/client.js';
+import { fetchCampaignFragmentAtPath } from '$lib/aem/delivery.js';
+import type { AppEnv } from '$lib/aem/env.js';
+import { resolveAppEnv } from '$lib/server/app-env.js';
 import type { CFFragment, ResolvedCFData } from '$lib/aem/types.js';
 import { loadTemplate } from '$lib/templates/registry.js';
 import type { TemplateEntry, TemplateDefinition } from '$lib/templates/registry.js';
@@ -13,12 +16,10 @@ import { resolve } from '$lib/render/resolve.js';
 import { compileMJML } from '$lib/render/mjml.js';
 import { getPersona, flattenPersona } from '$lib/personas/samples.js';
 import { buildManifest } from '$lib/manifest/builder.js';
-import { loadCampaign } from '$lib/campaigns/registry.js';
-import type { Campaign } from '$lib/campaigns/registry.js';
+import { getCampaignWithCF } from '$lib/campaigns/service.js';
 
 export const GET: RequestHandler = async ({ url, platform }) => {
-	const env = platform?.env;
-	const mockMode = env?.MOCK_MODE === 'true' || !env;
+	const env = resolveAppEnv(platform?.env) as AppEnv | undefined;
 
 	const campaignId = url.searchParams.get('campaignId');
 	const personaId = url.searchParams.get('personaId') ?? 'persona-1';
@@ -27,11 +28,14 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 		throw error(400, 'campaignId query parameter is required');
 	}
 
-	// Load campaign
-	const campaign = loadCampaign(campaignId);
-	if (!campaign) {
-		throw error(404, `Campaign "${campaignId}" not found`);
+	const campaignResult = await getCampaignWithCF(campaignId, env);
+	if (campaignResult.error || !campaignResult.data) {
+		const message = campaignResult.error ?? 'Campaign not found';
+		const status = message.includes('not found') ? 404 : 502;
+		throw error(status, message);
 	}
+
+	const { campaign, cf: primaryCF } = campaignResult.data;
 
 	// Load template
 	const templateResult = loadTemplate(campaign.templateId);
@@ -40,23 +44,8 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 	}
 	const { definition, mjml } = templateResult.data as TemplateEntry;
 
-	// Fetch primary CF
-	const cfResult = await fetchCF(campaign.cfPath, {
-		baseUrl: env?.AEM_BASE_URL ?? '',
-		apiKey: env?.AEM_API_KEY,
-		mockMode
-	});
-	if (cfResult.error) {
-		throw error(502, cfResult.error);
-	}
-	const primaryCF = normalizeCF(cfResult.data as CFFragment);
-
-	// Resolve referenced CFs (one level deep)
-	const referencedCFs = await resolveReferencedCFs(primaryCF.fields, definition, {
-		baseUrl: env?.AEM_BASE_URL ?? '',
-		apiKey: env?.AEM_API_KEY,
-		mockMode
-	});
+	// Resolve referenced CFs (one level deep) — skipped when already hydrated via direct-hydrated
+	const referencedCFs = await resolveReferencedCFs(primaryCF.fields, definition, env);
 
 	// Build context — preserve profile tokens for AJO send-time resolution
 	const persona = getPersona(personaId);
@@ -103,7 +92,7 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 async function resolveReferencedCFs(
 	fields: Record<string, unknown>,
 	definition: TemplateDefinition,
-	opts: { baseUrl: string; apiKey?: string; mockMode?: boolean }
+	env?: AppEnv
 ): Promise<ResolvedCFData[]> {
 	const results: ResolvedCFData[] = [];
 
@@ -114,9 +103,9 @@ async function resolveReferencedCFs(
 
 		const refObj = refValue as { _path?: string };
 		if (refObj._path) {
-			const refResult = await fetchCF(refObj._path, opts);
-			if (!refResult.error) {
-				results.push(normalizeCF(refResult.data as CFFragment));
+			const refResult = await fetchCampaignFragmentAtPath(refObj._path, env);
+			if (!refResult.error && refResult.data) {
+				results.push(normalizeCF(refResult.data));
 			}
 		}
 	}

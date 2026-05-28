@@ -7,8 +7,6 @@
 import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 
-import { fetchCF, normalizeCF } from '$lib/aem/client.js';
-import type { CFFragment } from '$lib/aem/types.js';
 import { loadTemplate } from '$lib/templates/registry.js';
 import type { TemplateEntry, TemplateDefinition } from '$lib/templates/registry.js';
 import { resolve } from '$lib/render/resolve.js';
@@ -16,16 +14,25 @@ import { compileMJML } from '$lib/render/mjml.js';
 import { injectUEAttributes, injectUEHead } from '$lib/render/inject-ue.js';
 import { validate } from '$lib/render/validate.js';
 import { flattenPersona, resolvePreviewPersona } from '$lib/personas/samples.js';
-import { loadCampaign } from '$lib/campaigns/registry.js';
+import { getCampaignWithCF } from '$lib/campaigns/service.js';
+import { resolveAppEnv } from '$lib/server/app-env.js';
 
 export const GET: RequestHandler = async ({ params, url, platform }) => {
-	const env = platform?.env;
-	const mockMode = env?.MOCK_MODE === 'true' || !env;
+	const env = resolveAppEnv(platform?.env);
 
 	const { campaignId } = params;
 	const personaId = url.searchParams.get('personaId') ?? 'persona-1';
 	const personaJson = url.searchParams.get('persona');
-	const templateId = url.searchParams.get('templateId') ?? 'promo';
+
+	const campaignResult = await getCampaignWithCF(campaignId, env);
+	if (campaignResult.error || !campaignResult.data) {
+		const message = campaignResult.error ?? 'Campaign not found';
+		const status = message.includes('not found') ? 404 : 502;
+		throw error(status, message);
+	}
+
+	const { campaign, cf } = campaignResult.data;
+	const templateId = url.searchParams.get('templateId') ?? campaign.templateId ?? 'promo';
 
 	// Load template
 	const templateResult = loadTemplate(templateId);
@@ -33,23 +40,6 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
 		throw error(404, templateResult.error);
 	}
 	const { definition, mjml } = templateResult.data as TemplateEntry;
-
-	// Load campaign to get CF path
-	const campaign = loadCampaign(campaignId);
-	if (!campaign) {
-		throw error(404, `Campaign "${campaignId}" not found`);
-	}
-
-	// Fetch CF
-	const cfResult = await fetchCF(campaign.cfPath, {
-		baseUrl: env?.AEM_BASE_URL ?? '',
-		apiKey: env?.AEM_API_KEY,
-		mockMode
-	});
-	if (cfResult.error) {
-		throw error(502, cfResult.error);
-	}
-	const cf = normalizeCF(cfResult.data as CFFragment);
 
 	// Resolve referenced CFs (for the featured offer block, etc.)
 	const cfContext = buildCFContext(cf.fields, definition);

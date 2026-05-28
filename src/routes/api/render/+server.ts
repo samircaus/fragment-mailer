@@ -7,6 +7,7 @@ import type { RequestHandler } from './$types';
 import { z } from 'zod';
 
 import { fetchCF, normalizeCF } from '$lib/aem/client.js';
+import { aemClientOptions } from '$lib/aem/env.js';
 import type { CFFragment } from '$lib/aem/types.js';
 import { loadTemplate } from '$lib/templates/registry.js';
 import type { TemplateEntry } from '$lib/templates/registry.js';
@@ -26,7 +27,7 @@ const RenderRequestSchema = z.object({
 
 export const POST: RequestHandler = async ({ request, platform }) => {
 	const env = platform?.env;
-	const mockMode = env?.MOCK_MODE === 'true' || !env;
+	const aemOpts = aemClientOptions(env);
 
 	let body: unknown;
 	try {
@@ -50,11 +51,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 	const { definition, mjml } = templateResult.data as TemplateEntry;
 
 	// Fetch CF
-	const cfResult = await fetchCF(cfPath, {
-		baseUrl: env?.AEM_BASE_URL ?? '',
-		apiKey: env?.AEM_API_KEY,
-		mockMode
-	});
+	const cfResult = await fetchCF(cfPath, aemOpts);
 	if (cfResult.error) {
 		throw error(502, cfResult.error);
 	}
