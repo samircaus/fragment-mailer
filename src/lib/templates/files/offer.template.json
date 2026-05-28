@@ -8,7 +8,7 @@
       "type": "text",
       "required": true,
       "binding": "cf.title",
-      "modelId": "title"
+      "modelId": "offer-title"
     },
     "bannerImage": {
       "type": "reference",
@@ -22,19 +22,19 @@
       "binding": "cf.emailCopy",
       "renderBinding": "cf.emailCopyHtml",
       "aueProp": "emailBody",
-      "modelId": "body-text"
+      "modelId": "offer-body"
     },
     "ctaLabel": {
       "type": "text",
       "required": false,
       "binding": "cf.ctaLabel",
-      "modelId": "cta"
+      "modelId": "offer-cta"
     },
     "ctaLink": {
       "type": "url",
       "required": false,
       "binding": "cf.ctaLink",
-      "modelId": "cta"
+      "modelId": "offer-cta"
     }
   },
   "profileTokens": [],

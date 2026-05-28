@@ -20,19 +20,19 @@
       "type": "richtext",
       "required": true,
       "binding": "cf.bodyCopy",
-      "modelId": "body-text"
+      "modelId": "promo-body"
     },
     "ctaText": {
       "type": "text",
       "required": true,
       "binding": "cf.ctaText",
-      "modelId": "cta"
+      "modelId": "promo-cta"
     },
     "ctaUrl": {
       "type": "url",
       "required": true,
       "binding": "cf.ctaUrl",
-      "modelId": "cta"
+      "modelId": "promo-cta"
     },
     "featuredOffer": {
       "type": "reference",

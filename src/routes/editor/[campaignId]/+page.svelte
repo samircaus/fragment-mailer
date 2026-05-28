@@ -80,7 +80,11 @@
 	let leftPanelWidth = $state(LEFT_PANEL_DEFAULT);
 	let isResizingPanel = $state(false);
 
-	let activeTab = $state<'code' | 'tree'>('code');
+	let activeTab = $state<'code' | 'tree' | 'html'>('code');
+	let htmlOutput = $state('');
+	let htmlCompileStatus = $state<'idle' | 'loading' | 'error'>('idle');
+	let htmlCompileError = $state('');
+	let htmlCompileRequestId = 0;
 	let treeNodes = $state<FlatNode[]>([]);
 	let collapsedPaths = $state(new Set<string>());
 	let addMenuNode = $state<{ node: FlatNode; x: number; y: number } | null>(null);
@@ -212,6 +216,31 @@
 		treeNodes = buildTree(mjmlCode);
 	});
 
+	// Debounced HTML compile when viewing HTML tab or when inputs change on that tab
+	$effect(() => {
+		const mjml = mjmlCode;
+		const tab = activeTab;
+		const id = campaignId;
+		const templateId = selectedTemplateId;
+		const personaId = selectedPersonaId;
+		const company = selectedCompanyName;
+		const persona = selectedPersona;
+
+		if (tab !== 'html' || !id || !templateId || !mjml.trim()) {
+			return;
+		}
+
+		htmlCompileStatus = 'loading';
+		htmlCompileError = '';
+
+		const timer = setTimeout(() => {
+			const requestId = ++htmlCompileRequestId;
+			void compileHtmlPreview(mjml, id, templateId, personaId, company, persona, requestId);
+		}, 400);
+
+		return () => clearTimeout(timer);
+	});
+
 	// ─── Data loading ────────────────────────────────────────────────────────────
 	async function loadCampaign() {
 		isLoading = true;
@@ -238,6 +267,58 @@
 			templates = data.templates;
 		} catch (err) {
 			console.error('Failed to load templates:', err);
+		}
+	}
+
+	async function compileHtmlPreview(
+		mjml: string,
+		id: string,
+		templateId: string,
+		personaId: string,
+		companyName: string,
+		persona: Persona | null | undefined,
+		requestId: number
+	) {
+		try {
+			const res = await fetch('/api/compile', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					mjml,
+					campaignId: id,
+					templateId,
+					personaId,
+					companyName,
+					persona: persona ?? undefined
+				})
+			});
+
+			if (requestId !== htmlCompileRequestId) return;
+
+			const data = (await res.json()) as {
+				html?: string | null;
+				errors?: Array<{ message: string }>;
+				message?: string;
+			};
+
+			if (!res.ok || !data.html) {
+				const details = Array.isArray(data.errors)
+					? data.errors.map((e) => e.message).join('; ')
+					: (data.message ?? `Compile failed: ${res.status}`);
+				htmlOutput = '';
+				htmlCompileError = details;
+				htmlCompileStatus = 'error';
+				return;
+			}
+
+			htmlOutput = data.html;
+			htmlCompileStatus = 'idle';
+			htmlCompileError = '';
+		} catch (e) {
+			if (requestId !== htmlCompileRequestId) return;
+			htmlOutput = '';
+			htmlCompileError = e instanceof Error ? e.message : 'Compile failed';
+			htmlCompileStatus = 'error';
 		}
 	}
 
@@ -1090,6 +1171,9 @@
 				<button class="tab" class:active={activeTab === 'tree'} onclick={() => (activeTab = 'tree')}>
 					Structure
 				</button>
+				<button class="tab" class:active={activeTab === 'html'} onclick={() => (activeTab = 'html')}>
+					HTML
+				</button>
 			</div>
 
 			<!-- Panel content -->
@@ -1109,6 +1193,26 @@
 								autocomplete="off"
 								autocapitalize="off"
 								placeholder="<mjml>…</mjml>"
+							></textarea>
+						{/if}
+					</div>
+				{:else if activeTab === 'html'}
+					<div class="editor-wrap html-panel">
+						<div class="html-panel-hint">Read-only · compiled from MJML with current persona</div>
+						{#if !mjmlCode.trim()}
+							<div class="html-empty">No MJML to compile</div>
+						{:else if htmlCompileStatus === 'loading' && !htmlOutput}
+							<div class="html-empty">Compiling…</div>
+						{:else if htmlCompileStatus === 'error'}
+							<div class="editor-error">{htmlCompileError}</div>
+						{:else}
+							<textarea
+								class="mjml-editor html-output"
+								readonly
+								value={htmlOutput}
+								spellcheck={false}
+								tabindex="-1"
+								aria-label="Compiled HTML output"
 							></textarea>
 						{/if}
 					</div>
@@ -1967,6 +2071,32 @@
 		font-size: 13px;
 		color: #dc2626;
 		background: #fff8f8;
+	}
+
+	.html-panel {
+		position: relative;
+	}
+
+	.html-panel-hint {
+		flex-shrink: 0;
+		padding: 8px 16px;
+		font-size: 11px;
+		color: #71717a;
+		background: #f4f4f5;
+		border-bottom: 1px solid #e4e4e7;
+	}
+
+	.html-empty {
+		padding: 24px 16px;
+		font-size: 13px;
+		color: #a1a1aa;
+		text-align: center;
+	}
+
+	.html-output {
+		color: #3f3f46;
+		background: #fff;
+		cursor: default;
 	}
 
 	/* Tree tab */

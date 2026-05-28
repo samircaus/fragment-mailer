@@ -1,8 +1,8 @@
 {
   "groups": [
     {
-      "title": "Email",
-      "id": "email",
+      "title": "Email Campaign",
+      "id": "email-campaign",
       "components": [
         {
           "title": "Hero",
@@ -17,8 +17,8 @@
           }
         },
         {
-          "title": "Body Text",
-          "id": "body-text",
+          "title": "Body Copy",
+          "id": "promo-body",
           "plugins": {
             "aem": {
               "cf": {
@@ -30,12 +30,54 @@
         },
         {
           "title": "CTA",
-          "id": "cta",
+          "id": "promo-cta",
           "plugins": {
             "aem": {
               "cf": {
                 "name": "CTA",
                 "cfModel": "EmailCampaign"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "title": "Offer",
+      "id": "offer",
+      "components": [
+        {
+          "title": "Title",
+          "id": "offer-title",
+          "plugins": {
+            "aem": {
+              "cf": {
+                "name": "Title",
+                "cfModel": "Offer"
+              }
+            }
+          }
+        },
+        {
+          "title": "Email Body",
+          "id": "offer-body",
+          "plugins": {
+            "aem": {
+              "cf": {
+                "name": "EmailBody",
+                "cfModel": "Offer"
+              }
+            }
+          }
+        },
+        {
+          "title": "CTA",
+          "id": "offer-cta",
+          "plugins": {
+            "aem": {
+              "cf": {
+                "name": "CTA",
+                "cfModel": "Offer"
               }
             }
           }

@@ -15,7 +15,7 @@ export interface UEBinding {
 	cfPath: string;    // AEM DAM path, e.g. /content/dam/campaigns/spring-promo
 	fieldName: string; // e.g. "heroHeadline"
 	fieldType: 'text' | 'richtext' | 'url' | 'reference';
-	modelId?: string;  // per-span UE model, e.g. "hero", "body-text", "cta"
+	modelId?: string;  // per-span UE model, e.g. "hero", "promo-body", "offer-body"
 }
 
 const OUTPUT_TOKEN_RE = /\{\{\s*([\s\S]*?)\s*\}\}/g;

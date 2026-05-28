@@ -18,7 +18,7 @@
     ]
   },
   {
-    "id": "body-text",
+    "id": "promo-body",
     "fields": [
       {
         "component": "richtext",
@@ -26,18 +26,11 @@
         "label": "Body Copy",
         "valueType": "string",
         "required": true
-      },
-      {
-        "component": "richtext",
-        "name": "emailBody",
-        "label": "Email Body",
-        "valueType": "string",
-        "required": true
       }
     ]
   },
   {
-    "id": "cta",
+    "id": "promo-cta",
     "fields": [
       {
         "component": "text",
@@ -52,6 +45,47 @@
         "label": "CTA URL",
         "valueType": "string",
         "required": true
+      }
+    ]
+  },
+  {
+    "id": "offer-title",
+    "fields": [
+      {
+        "component": "text",
+        "name": "title",
+        "label": "Title",
+        "valueType": "string",
+        "required": true
+      }
+    ]
+  },
+  {
+    "id": "offer-body",
+    "fields": [
+      {
+        "component": "richtext",
+        "name": "emailBody",
+        "label": "Email Body",
+        "valueType": "string",
+        "required": true
+      }
+    ]
+  },
+  {
+    "id": "offer-cta",
+    "fields": [
+      {
+        "component": "text",
+        "name": "ctaLabel",
+        "label": "CTA Label",
+        "valueType": "string"
+      },
+      {
+        "component": "text",
+        "name": "ctaLink",
+        "label": "CTA Link",
+        "valueType": "string"
       }
     ]
   }

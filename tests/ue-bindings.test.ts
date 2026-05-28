@@ -15,7 +15,7 @@ const offerDefinition = {
 			binding: 'cf.emailCopy',
 			renderBinding: 'cf.emailCopyHtml',
 			aueProp: 'emailBody',
-			modelId: 'body-text'
+			modelId: 'offer-body'
 		}
 	},
 	profileTokens: [],
@@ -37,7 +37,7 @@ describe('buildUEBindings', () => {
 			cfPath: '/content/dam/offers/spring',
 			fieldName: 'emailBody',
 			fieldType: 'richtext',
-			modelId: 'body-text'
+			modelId: 'offer-body'
 		});
 	});
 });
@@ -52,11 +52,11 @@ describe('injectUEAttributes — richtext', () => {
 				cfPath: '/content/dam/offers/spring',
 				fieldName: 'emailBody',
 				fieldType: 'richtext',
-				modelId: 'body-text'
+				modelId: 'offer-body'
 			}
 		]);
 		expect(out).toContain('data-aue-prop="emailBody"');
 		expect(out).toContain('data-aue-type="richtext"');
-		expect(out).toContain('data-aue-model="body-text"');
+		expect(out).toContain('data-aue-model="offer-body"');
 	});
 });
