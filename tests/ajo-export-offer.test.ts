@@ -1,0 +1,39 @@
+import { describe, it, expect } from 'vitest';
+import offerDefinition from '../src/lib/templates/files/offer.template.json';
+import offerMJML from '../src/lib/templates/files/offer.mjml?raw';
+import { transformTemplateForAjo } from '../src/lib/ajo/export-pipeline.js';
+import type { TemplateDefinition } from '../src/lib/templates/registry.js';
+import type { AuthorFragment } from '../src/lib/types/aem.js';
+
+const offerDef = offerDefinition as TemplateDefinition;
+
+const mockOfferCampaign: AuthorFragment = {
+	id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+	path: '/content/dam/offers/test-offer',
+	title: 'Test Offer',
+	etag: '1',
+	created: { at: '', by: '' },
+	modified: { at: '', by: '' },
+	model: { id: 'offer-model', title: 'Offer' },
+	status: 'published',
+	published: { at: '2025-01-01', by: 'admin' },
+	fields: []
+};
+
+describe('transformTemplateForAjo — offer template without manual load tags', () => {
+	it('auto-injects cf load and compiles', async () => {
+		const result = await transformTemplateForAjo({
+			mjml: offerMJML,
+			campaignId: 'test-offer',
+			campaignFragment: mockOfferCampaign,
+			templateDefinition: offerDef,
+			env: { MOCK_MODE: 'true', IMS_ORG_ID: 'org@AdobeOrg', AJO_SANDBOX: 'prod' },
+			imsOrgId: 'org@AdobeOrg',
+			ajoSandboxName: 'prod'
+		});
+
+		expect(result.injectedLoadTags).toContainEqual({ varName: 'cf', refExpression: 'this' });
+		expect(result.validationErrors).toHaveLength(0);
+		expect(result.html).toContain('aem:aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee');
+	});
+});

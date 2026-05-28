@@ -40,13 +40,16 @@ export const POST: RequestHandler = async ({ url, request, platform }) => {
 		url.searchParams.get('ajoTemplateId') ||
 		undefined;
 
-	return runAjoExport(url, env, { push, templateName, ajoTemplateId });
+	const mjml = typeof body.mjml === 'string' ? body.mjml : undefined;
+
+	return runAjoExport(url, env, { push, templateName, ajoTemplateId, mjml });
 };
 
 interface ExportOptions {
 	push: boolean;
 	templateName?: string;
 	ajoTemplateId?: string;
+	mjml?: string;
 }
 
 async function runAjoExport(
@@ -77,10 +80,14 @@ async function runAjoExport(
 
 	const campaignFragment = await loadAuthorCampaign(campaignId, campaign.cfPath, env);
 
+	const mjmlFromBody = opts.mjml?.trim();
+	const mjml = mjmlFromBody && mjmlFromBody.length > 0 ? mjmlFromBody : templateResult.data.mjml;
+
 	const transform = await transformTemplateForAjo({
-		mjml: templateResult.data.mjml,
+		mjml,
 		campaignId,
 		campaignFragment: campaignFragment ?? undefined,
+		templateDefinition: templateResult.data.definition,
 		env,
 		imsOrgId,
 		ajoSandboxName: sandbox
@@ -115,6 +122,7 @@ async function runAjoExport(
 			html: transform.html,
 			repoId: transform.repoId,
 			loadTags: transform.loadTags,
+			injectedLoadTags: transform.injectedLoadTags,
 			ajoConfigured: isAjoConfigured(env)
 		});
 	}

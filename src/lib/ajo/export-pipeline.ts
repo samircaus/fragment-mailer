@@ -14,6 +14,8 @@ import {
 } from '$lib/render/ajo-load-tags.js';
 import { resolveLoadTagRefs } from '$lib/render/ajo-ref-resolver.js';
 import { wrapAjoControlTagsForMjml } from '$lib/render/ajo-export.js';
+import { ensureLoadTagsInTemplate } from '$lib/render/ajo-load-inject.js';
+import type { TemplateDefinition } from '$lib/templates/registry.js';
 import type { AuthorFragment } from '$lib/types/aem.js';
 import { validateAjoExport, type AjoExportValidationError } from './validate.js';
 
@@ -21,6 +23,7 @@ export interface AjoTransformResult {
 	html: string;
 	repoId: string;
 	loadTags: ParsedLoadTag[];
+	injectedLoadTags: Array<{ varName: string; refExpression: string }>;
 	resolvedCount: number;
 	validationErrors: AjoExportValidationError[];
 }
@@ -29,6 +32,7 @@ export interface AjoTransformInput {
 	mjml: string;
 	campaignId: string;
 	campaignFragment?: AuthorFragment;
+	templateDefinition?: TemplateDefinition;
 	env?: AppEnv;
 	imsOrgId: string;
 	ajoSandboxName: string;
@@ -42,29 +46,37 @@ export async function transformTemplateForAjo(input: AjoTransformInput): Promise
 	const opts = aemClientOptions(env);
 	const repoId = publishHostRepoId(env);
 
-	const loadTags = parseLoadTags(input.mjml);
+	const campaign = input.campaignFragment ?? (await loadCampaignFragment(input, opts, env));
+
+	const { mjml: preparedMjml, injected } = ensureLoadTagsInTemplate(
+		input.mjml,
+		input.templateDefinition,
+		campaign ?? undefined
+	);
+
+	const loadTags = parseLoadTags(preparedMjml);
 	if (loadTags.length === 0) {
 		return {
 			html: '',
 			repoId,
 			loadTags: [],
+			injectedLoadTags: injected,
 			resolvedCount: 0,
 			validationErrors: [
 				{
 					code: 'leftover_load_tags',
 					message:
-						'No {% load ... as fragment ref=... %} tags found in template. Add load tags before exporting to AJO.'
+						'No content fragment bindings found. Template must use {{ cf.field }} or {% load %} tags.'
 				}
 			]
 		};
 	}
-
-	const campaign = input.campaignFragment ?? (await loadCampaignFragment(input, opts, env));
 	if (!campaign) {
 		return {
 			html: '',
 			repoId,
 			loadTags,
+			injectedLoadTags: injected,
 			resolvedCount: 0,
 			validationErrors: [
 				{
@@ -95,7 +107,7 @@ export async function transformTemplateForAjo(input: AjoTransformInput): Promise
 		};
 	});
 
-	const transformedMjml = replaceLoadTags(input.mjml, replacements);
+	const transformedMjml = replaceLoadTags(preparedMjml, replacements);
 	const wrappedMjml = wrapAjoControlTagsForMjml(transformedMjml);
 	const compileResult = await compileMJML(wrappedMjml, { minify: false });
 
@@ -122,6 +134,7 @@ export async function transformTemplateForAjo(input: AjoTransformInput): Promise
 		html: compileResult.html ?? '',
 		repoId,
 		loadTags,
+		injectedLoadTags: injected,
 		resolvedCount: resolved.length,
 		validationErrors
 	};

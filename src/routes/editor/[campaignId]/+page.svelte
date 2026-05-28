@@ -368,18 +368,24 @@
 		ajoExportStatus = 'exporting';
 		ajoExportMessage = '';
 		try {
-			const params = new URLSearchParams({ campaignId, format: 'html' });
-			const res = await fetch(`/api/export/ajo?${params.toString()}`);
+			const res = await fetch(`/api/export/ajo?campaignId=${encodeURIComponent(campaignId)}`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ mjml: mjmlCode, push: false })
+			});
 			if (!res.ok) {
 				const err = (await res.json().catch(() => ({}))) as {
 					validationErrors?: Array<{ message: string }>;
+					message?: string;
 				};
 				const details = Array.isArray(err.validationErrors)
 					? err.validationErrors.map((e) => e.message).join('; ')
-					: `AJO export failed: ${res.status}`;
+					: (err.message ?? `AJO export failed: ${res.status}`);
 				throw new Error(details);
 			}
-			const blob = await res.blob();
+			const payload = (await res.json()) as { html?: string };
+			if (!payload.html) throw new Error('Export returned no HTML');
+			const blob = new Blob([payload.html], { type: 'text/html;charset=utf-8' });
 			const downloadUrl = URL.createObjectURL(blob);
 			const a = document.createElement('a');
 			a.href = downloadUrl;
@@ -406,6 +412,7 @@
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
 					push: true,
+					mjml: mjmlCode,
 					templateName: campaign?.name ?? campaignId,
 					ajoTemplateId
 				})
