@@ -1,6 +1,34 @@
-// AJO Content Templates API types.
-// TODO(decision): Verify exact API shape against AJO API docs once real credentials are available.
-// Current structure is based on AJO Content Templates API public docs (v1).
+// AJO Journey Content Templates API types.
+// TODO(spike): Confirm exact API shape against DevTools capture from AJO UI.
+
+export interface AJOContentTemplatePayload {
+	name: string;
+	channel: 'email';
+	contentType: 'text/html';
+	body: string;
+}
+
+export interface AJOContentTemplateResult {
+	id: string;
+	status: 'created' | 'updated';
+	previewUrl?: string;
+}
+
+/** @deprecated Use AJOContentTemplatePayload */
+export interface AJOImportPayload {
+	name: string;
+	subject: string;
+	preheader: string;
+	html: string;
+	metadata: Record<string, string>;
+}
+
+/** @deprecated Use AJOContentTemplateResult */
+export interface AJOImportResult {
+	id: string;
+	status: 'created' | 'updated';
+	previewUrl?: string;
+}
 
 export interface AJOContentTemplate {
 	id: string;
@@ -14,18 +42,4 @@ export interface AJOContentTemplate {
 	metadata: Record<string, string>;
 	createdAt: string;
 	updatedAt: string;
-}
-
-export interface AJOImportPayload {
-	name: string;
-	subject: string;
-	preheader: string;
-	html: string;
-	metadata: Record<string, string>;
-}
-
-export interface AJOImportResult {
-	id: string;
-	status: 'created' | 'updated';
-	previewUrl?: string;
 }

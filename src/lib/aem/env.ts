@@ -32,6 +32,16 @@ export interface AppEnv {
 	IMS_HOST?: string;
 	/** Comma-separated scopes override for Author OAuth */
 	IMS_SCOPES?: string;
+	/** Author host (defaults to AEM_BASE_URL when AEM_TIER=author) */
+	AEM_AUTHOR_HOST?: string;
+	/** Publish host for AJO repoId (hostname only after strip) */
+	AEM_PUBLISH_HOST?: string;
+	/** AJO sandbox name (falls back to AJO_SANDBOX) */
+	AJO_SANDBOX_NAME?: string;
+	/** AJO IMS OAuth client (separate from AEM) */
+	AJO_IMS_CLIENT_ID?: string;
+	AJO_IMS_CLIENT_SECRET?: string;
+	AJO_SANDBOX?: string;
 }
 
 export interface GraphQLConfig {
@@ -94,4 +104,22 @@ export function graphqlConfig(env?: AppEnv): GraphQLConfig {
 		byPathQuery: env?.AEM_GRAPHQL_BY_PATH_QUERY?.trim() || 'campaign-by-path',
 		byPathParam: env?.AEM_GRAPHQL_BY_PATH_PARAM?.trim() || 'campaignPath'
 	};
+}
+
+/** Author tier base URL for CF Management API. */
+export function authorHostUrl(env?: AppEnv): string {
+	const explicit = env?.AEM_AUTHOR_HOST?.trim();
+	if (explicit) return normalizeAemBaseUrl(explicit);
+	if (aemTier(env) === 'author') return normalizeAemBaseUrl(env?.AEM_BASE_URL ?? '');
+	return '';
+}
+
+/** Publish hostname for AJO fragment repoId (no protocol). */
+export function publishHostRepoId(env?: AppEnv): string {
+	const raw = env?.AEM_PUBLISH_HOST?.trim() || env?.AEM_BASE_URL?.trim() || '';
+	return raw.replace(/^https?:\/\//i, '').replace(/\/$/, '');
+}
+
+export function ajoSandboxName(env?: AppEnv): string {
+	return env?.AJO_SANDBOX_NAME?.trim() || env?.AJO_SANDBOX?.trim() || 'prod';
 }

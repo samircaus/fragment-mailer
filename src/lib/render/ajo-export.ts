@@ -35,7 +35,7 @@ export function rewriteCfRefsForAjo(template: string, opts: PreserveCfRefsOption
 }
 
 export function wrapAjoControlTagsForMjml(mjml: string): string {
-	return mjml.replace(/\{%\s*(if|else|endif|let|fragment)\b[\s\S]*?%\}/g, (tag) => {
+	return mjml.replace(/\{%\s*(if|else|endif|let|fragment|load)\b[\s\S]*?%\}/g, (tag) => {
 		return `<mj-raw>${tag}</mj-raw>`;
 	});
 }

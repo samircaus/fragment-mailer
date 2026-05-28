@@ -90,7 +90,11 @@
 	let iframeKey = $state(0);
 	let iframeEl = $state<HTMLIFrameElement | null>(null);
 	let exportStatus = $state<'idle' | 'exporting' | 'done' | 'error'>('idle');
+	let ajoExportStatus = $state<'idle' | 'exporting' | 'done' | 'error'>('idle');
+	let ajoExportMessage = $state('');
 	let exportCfMode = $state<'preserve-refs' | 'baked-content'>('preserve-refs');
+
+	const AJO_TEMPLATE_ID_KEY = 'fm-ajo-template-id';
 
 	// Textarea ref (for Tab/cursor handling)
 	let textareaEl = $state<HTMLTextAreaElement | null>(null);
@@ -309,6 +313,7 @@
 	}
 
 	async function handleExport() {
+		if (!campaignId) return;
 		exportStatus = 'exporting';
 		try {
 			const params = new URLSearchParams({
@@ -331,6 +336,100 @@
 		} catch {
 			exportStatus = 'error';
 			setTimeout(() => (exportStatus = 'idle'), 3000);
+		}
+	}
+
+	function storedAjoTemplateId(): string | undefined {
+		if (!campaignId || typeof localStorage === 'undefined') return undefined;
+		try {
+			const raw = localStorage.getItem(AJO_TEMPLATE_ID_KEY);
+			if (!raw) return undefined;
+			const map = JSON.parse(raw) as Record<string, string>;
+			return map[campaignId];
+		} catch {
+			return undefined;
+		}
+	}
+
+	function saveAjoTemplateId(templateId: string) {
+		if (!campaignId || typeof localStorage === 'undefined') return;
+		try {
+			const raw = localStorage.getItem(AJO_TEMPLATE_ID_KEY);
+			const map = raw ? (JSON.parse(raw) as Record<string, string>) : {};
+			map[campaignId] = templateId;
+			localStorage.setItem(AJO_TEMPLATE_ID_KEY, JSON.stringify(map));
+		} catch {
+			// ignore quota / private mode
+		}
+	}
+
+	async function handleAjoHtmlExport() {
+		if (!campaignId) return;
+		ajoExportStatus = 'exporting';
+		ajoExportMessage = '';
+		try {
+			const params = new URLSearchParams({ campaignId, format: 'html' });
+			const res = await fetch(`/api/export/ajo?${params.toString()}`);
+			if (!res.ok) {
+				const err = (await res.json().catch(() => ({}))) as {
+					validationErrors?: Array<{ message: string }>;
+				};
+				const details = Array.isArray(err.validationErrors)
+					? err.validationErrors.map((e) => e.message).join('; ')
+					: `AJO export failed: ${res.status}`;
+				throw new Error(details);
+			}
+			const blob = await res.blob();
+			const downloadUrl = URL.createObjectURL(blob);
+			const a = document.createElement('a');
+			a.href = downloadUrl;
+			a.download = `${campaignId}-ajo.html`;
+			a.click();
+			URL.revokeObjectURL(downloadUrl);
+			ajoExportStatus = 'done';
+			setTimeout(() => (ajoExportStatus = 'idle'), 3000);
+		} catch (e) {
+			ajoExportMessage = e instanceof Error ? e.message : 'Export failed';
+			ajoExportStatus = 'error';
+			setTimeout(() => (ajoExportStatus = 'idle'), 5000);
+		}
+	}
+
+	async function handleAjoPush() {
+		if (!campaignId) return;
+		ajoExportStatus = 'exporting';
+		ajoExportMessage = '';
+		try {
+			const ajoTemplateId = storedAjoTemplateId();
+			const res = await fetch(`/api/export/ajo?campaignId=${encodeURIComponent(campaignId)}`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					push: true,
+					templateName: campaign?.name ?? campaignId,
+					ajoTemplateId
+				})
+			});
+			const data = (await res.json()) as {
+				ok?: boolean;
+				templateId?: string;
+				message?: string;
+				validationErrors?: Array<{ message: string }>;
+			};
+			if (!res.ok || !data.ok) {
+				const details = Array.isArray(data.validationErrors)
+					? data.validationErrors.map((e) => e.message).join('; ')
+					: (data.message ?? `Push failed: ${res.status}`);
+				throw new Error(details);
+			}
+			if (data.templateId) saveAjoTemplateId(data.templateId);
+			ajoExportMessage = data.templateId ? `Template ${data.templateId}` : 'Pushed';
+			ajoExportStatus = 'done';
+			setTimeout(() => (ajoExportStatus = 'idle'), 4000);
+		} catch (e) {
+			ajoExportMessage = e instanceof Error ? e.message : 'Push failed';
+			ajoExportStatus = 'error';
+			setTimeout(() => (ajoExportStatus = 'idle'), 5000);
 		}
 	}
 
@@ -621,18 +720,44 @@
 			</select>
 		</label>
 		<button
+			class="export-btn secondary"
+			class:loading={ajoExportStatus === 'exporting'}
+			class:done={ajoExportStatus === 'done'}
+			class:error={ajoExportStatus === 'error'}
+			onclick={handleAjoHtmlExport}
+			disabled={ajoExportStatus === 'exporting' || exportStatus === 'exporting'}
+			title="Download AJO-ready HTML with let/fragment bindings"
+		>
+			{#if ajoExportStatus === 'exporting'}AJO…
+			{:else if ajoExportStatus === 'done'}HTML ✓
+			{:else if ajoExportStatus === 'error'}AJO failed
+			{:else}AJO HTML{/if}
+		</button>
+		<button
 			class="export-btn"
+			class:loading={ajoExportStatus === 'exporting'}
+			onclick={handleAjoPush}
+			disabled={ajoExportStatus === 'exporting' || exportStatus === 'exporting'}
+			title="Push to AJO Content Templates API"
+		>
+			Push AJO
+		</button>
+		<button
+			class="export-btn secondary"
 			class:loading={exportStatus === 'exporting'}
 			class:done={exportStatus === 'done'}
 			class:error={exportStatus === 'error'}
 			onclick={handleExport}
-			disabled={exportStatus === 'exporting'}
+			disabled={exportStatus === 'exporting' || ajoExportStatus === 'exporting'}
 		>
 			{#if exportStatus === 'exporting'}Exporting…
 			{:else if exportStatus === 'done'}Exported ✓
 			{:else if exportStatus === 'error'}Export failed
-			{:else}Export for AJO{/if}
+			{:else}Manifest export{/if}
 		</button>
+		{#if ajoExportMessage && ajoExportStatus === 'error'}
+			<span class="export-error-hint" title={ajoExportMessage}>{ajoExportMessage}</span>
+		{/if}
 	</header>
 
 	<div class="panels" class:resizing={isResizingPanel}>
@@ -1270,6 +1395,22 @@
 	}
 	.export-btn.error {
 		background: #dc2626;
+	}
+	.export-btn.secondary {
+		background: #fff;
+		color: #333;
+		border: 1px solid #ccc;
+	}
+	.export-btn.secondary:hover:not(:disabled) {
+		background: #f5f5f5;
+	}
+	.export-error-hint {
+		font-size: 11px;
+		color: #dc2626;
+		max-width: 200px;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	/* ── Panels ──────────────────────────────────────────────────────────────── */

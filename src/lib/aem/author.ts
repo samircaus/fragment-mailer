@@ -2,7 +2,7 @@
 // Uses OAuth bearer tokens; never call /adobe/contentFragments on Author.
 
 import { getAemAccessToken } from '$lib/auth/token-provider.js';
-import type { AuthorFragment, AuthorFragmentList } from '$lib/types/aem.js';
+import type { AuthorFragment, AuthorFragmentList, AuthorModel } from '$lib/types/aem.js';
 import { authorFragmentToCFFragment, authorFragmentToListItem } from './author-map.js';
 import type { AEMClientOptions } from './client.js';
 import type { AppEnv } from './env.js';
@@ -58,6 +58,17 @@ export async function fetchAuthorFragmentById(
 	opts: AEMClientOptions,
 	env?: AppEnv
 ): Promise<Result<CFFragment>> {
+	const raw = await fetchAuthorFragmentRawById(id, opts, env);
+	if (raw.error || !raw.data) return raw;
+	return { data: authorFragmentToCFFragment(raw.data) };
+}
+
+/** Fetch raw Author API fragment (for AJO export ref resolution). */
+export async function fetchAuthorFragmentRawById(
+	id: string,
+	opts: AEMClientOptions,
+	env?: AppEnv
+): Promise<Result<AuthorFragment>> {
 	const qs = new URLSearchParams({ references: 'all-hydrated' });
 	const url = `${sitesCfBase(opts)}/fragments/${encodeURIComponent(id)}?${qs}`;
 	const res = await fetch(url, { headers: await authorHeaders(env) });
@@ -67,7 +78,40 @@ export async function fetchAuthorFragmentById(
 	}
 
 	const fragment = (await res.json()) as AuthorFragment;
-	return { data: authorFragmentToCFFragment(fragment) };
+	return { data: fragment };
+}
+
+export async function fetchAuthorFragmentRawByPath(
+	path: string,
+	opts: AEMClientOptions,
+	env?: AppEnv
+): Promise<Result<AuthorFragment>> {
+	const url = new URL(`${sitesCfBase(opts)}/fragments`);
+	url.searchParams.set('path', path);
+
+	const res = await fetch(url, { headers: await authorHeaders(env) });
+	if (!res.ok) {
+		const snippet = await readResponseSnippet(res);
+		return { error: `AEM Author CF fetch failed ${res.status} for path: ${path}. Body: ${snippet}` };
+	}
+
+	const body: unknown = await res.json();
+	if (body && typeof body === 'object' && 'id' in body && 'path' in body && !('items' in body)) {
+		return { data: body as AuthorFragment };
+	}
+
+	const items = extractAuthorList(body as AuthorFragmentList | AuthorFragment[]);
+	const match = items.find((f) => f.path === path) ?? items[0];
+
+	if (!match?.id) {
+		return { error: `No CF found at path: ${path}` };
+	}
+
+	if (match.fields?.length) {
+		return { data: match };
+	}
+
+	return fetchAuthorFragmentRawById(match.id, opts, env);
 }
 
 export async function fetchAuthorFragmentByPath(
@@ -100,7 +144,23 @@ export async function fetchAuthorFragmentByPath(
 		return { data: authorFragmentToCFFragment(match) };
 	}
 
-	return fetchAuthorFragmentById(match.id, opts, env);
+	return fetchAuthorFragmentRawById(match.id, opts, env).then((r) =>
+		r.data ? { data: authorFragmentToCFFragment(r.data) } : r
+	);
+}
+
+export async function fetchAuthorModel(
+	modelId: string,
+	opts: AEMClientOptions,
+	env?: AppEnv
+): Promise<Result<AuthorModel & { tags?: string[] }>> {
+	const url = `${sitesCfBase(opts)}/models/${encodeURIComponent(modelId)}`;
+	const res = await fetch(url, { headers: await authorHeaders(env) });
+	if (!res.ok) {
+		const snippet = await readResponseSnippet(res);
+		return { error: `AEM Author model fetch failed ${res.status} for id: ${modelId}. Body: ${snippet}` };
+	}
+	return { data: (await res.json()) as AuthorModel & { tags?: string[] } };
 }
 
 function extractAuthorList(body: AuthorFragmentList | AuthorFragment[]): AuthorFragment[] {

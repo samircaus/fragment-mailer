@@ -13,6 +13,8 @@
   </mj-head>
 
   <mj-body background-color="#F4F4F4">
+    {% load cf as fragment ref='this' %}
+    {% load featuredOffer as fragment ref='this.featuredOffer' %}
 
     <!-- ─── Header ─── -->
     <mj-section background-color="#FFFFFF" padding="24px 24px 12px">
@@ -56,17 +58,17 @@
     </mj-section>
 
     <!-- ─── Featured offer (optional) ─── -->
-    {% if cf.featuredOffer.headline %}
+    {% if featuredOffer.headline %}
     <mj-section background-color="#EBF3FF" padding="32px 40px">
       <mj-column>
         <mj-text font-size="11px" color="#0265DC" align="center" text-transform="uppercase" letter-spacing="2px" font-weight="bold">
           Featured Offer
         </mj-text>
         <mj-text font-size="24px" font-weight="bold" color="#1A1A1A" align="center" padding-top="8px">
-          {{cf.featuredOffer.headline}}
+          {{featuredOffer.headline}}
         </mj-text>
         <mj-text font-size="15px" color="#555555" align="center" padding-top="4px">
-          {{cf.featuredOffer.description}}
+          {{featuredOffer.description}}
         </mj-text>
       </mj-column>
     </mj-section>

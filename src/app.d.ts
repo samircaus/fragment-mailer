@@ -38,6 +38,11 @@ interface Env {
 	IMS_SCOPES: string;
 	// AJO connection
 	AJO_SANDBOX: string;
+	AJO_SANDBOX_NAME: string;
+	AJO_IMS_CLIENT_ID: string;
+	AJO_IMS_CLIENT_SECRET: string;
+	AEM_AUTHOR_HOST: string;
+	AEM_PUBLISH_HOST: string;
 	// Feature flags
 	MOCK_MODE: string; // "true" | "false"
 }

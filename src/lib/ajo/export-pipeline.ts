@@ -1,0 +1,167 @@
+// AJO export: parse load tags → resolve UUIDs → rewrite → compile HTML.
+
+import {
+	fetchAuthorFragmentRawById,
+	fetchAuthorFragmentRawByPath
+} from '$lib/aem/author.js';
+import { aemClientOptions, authorHostUrl, isMockMode, publishHostRepoId, type AppEnv } from '$lib/aem/env.js';
+import { compileMJML } from '$lib/render/mjml.js';
+import {
+	buildLetFragmentTag,
+	parseLoadTags,
+	replaceLoadTags,
+	type ParsedLoadTag
+} from '$lib/render/ajo-load-tags.js';
+import { resolveLoadTagRefs } from '$lib/render/ajo-ref-resolver.js';
+import { wrapAjoControlTagsForMjml } from '$lib/render/ajo-export.js';
+import type { AuthorFragment } from '$lib/types/aem.js';
+import { validateAjoExport, type AjoExportValidationError } from './validate.js';
+
+export interface AjoTransformResult {
+	html: string;
+	repoId: string;
+	loadTags: ParsedLoadTag[];
+	resolvedCount: number;
+	validationErrors: AjoExportValidationError[];
+}
+
+export interface AjoTransformInput {
+	mjml: string;
+	campaignId: string;
+	campaignFragment?: AuthorFragment;
+	env?: AppEnv;
+	imsOrgId: string;
+	ajoSandboxName: string;
+}
+
+const MOCK_CAMPAIGN_UUID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+const MOCK_OFFER_UUID = '11111111-2222-3333-4444-555555555555';
+
+export async function transformTemplateForAjo(input: AjoTransformInput): Promise<AjoTransformResult> {
+	const env = input.env;
+	const opts = aemClientOptions(env);
+	const repoId = publishHostRepoId(env);
+
+	const loadTags = parseLoadTags(input.mjml);
+	if (loadTags.length === 0) {
+		return {
+			html: '',
+			repoId,
+			loadTags: [],
+			resolvedCount: 0,
+			validationErrors: [
+				{
+					code: 'leftover_load_tags',
+					message:
+						'No {% load ... as fragment ref=... %} tags found in template. Add load tags before exporting to AJO.'
+				}
+			]
+		};
+	}
+
+	const campaign = input.campaignFragment ?? (await loadCampaignFragment(input, opts, env));
+	if (!campaign) {
+		return {
+			html: '',
+			repoId,
+			loadTags,
+			resolvedCount: 0,
+			validationErrors: [
+				{
+					code: 'unresolved_refs',
+					message: 'Could not load campaign content fragment from AEM.'
+				}
+			]
+		};
+	}
+
+	const { resolved, errors: resolutionErrors } = isMockMode(env)
+		? mockResolveLoadTags(loadTags)
+		: await resolveLoadTagRefs(
+				loadTags.map((t) => ({ varName: t.varName, refExpression: t.refExpression })),
+				campaign,
+				opts,
+				env
+			);
+
+	const replacements = loadTags.map((tag) => {
+		const match = resolved.find((r) => r.varName === tag.varName);
+		const uuid =
+			match?.uuid ??
+			(tag.refExpression === 'this' ? MOCK_CAMPAIGN_UUID : MOCK_OFFER_UUID);
+		return {
+			raw: tag.raw,
+			letTag: buildLetFragmentTag(tag.varName, uuid, repoId)
+		};
+	});
+
+	const transformedMjml = replaceLoadTags(input.mjml, replacements);
+	const wrappedMjml = wrapAjoControlTagsForMjml(transformedMjml);
+	const compileResult = await compileMJML(wrappedMjml, { minify: false });
+
+	const validationErrors = await validateAjoExport(
+		{
+			transformedTemplate: transformedMjml,
+			resolutionErrors,
+			resolvedRefs: resolved,
+			imsOrgId: input.imsOrgId,
+			ajoSandboxName: input.ajoSandboxName
+		},
+		opts,
+		env
+	);
+
+	if (!compileResult.html) {
+		validationErrors.push({
+			code: 'leftover_load_tags',
+			message: `MJML compilation failed: ${compileResult.errors.map((e) => e.message).join('; ')}`
+		});
+	}
+
+	return {
+		html: compileResult.html ?? '',
+		repoId,
+		loadTags,
+		resolvedCount: resolved.length,
+		validationErrors
+	};
+}
+
+async function loadCampaignFragment(
+	input: AjoTransformInput,
+	opts: ReturnType<typeof aemClientOptions>,
+	env?: AppEnv
+): Promise<AuthorFragment | null> {
+	if (input.campaignFragment) return input.campaignFragment;
+
+	const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+	const authorBase = authorHostUrl(env);
+	if (!authorBase) return null;
+
+	const authorOpts = { ...opts, baseUrl: authorBase };
+
+	if (UUID_RE.test(input.campaignId)) {
+		const r = await fetchAuthorFragmentRawById(input.campaignId, authorOpts, env);
+		return r.data ?? null;
+	}
+
+	const path = input.campaignId.startsWith('/content/')
+		? input.campaignId
+		: `${env?.AEM_CAMPAIGNS_PATH ?? '/content/dam/email/en/campaigns'}/${input.campaignId}`;
+
+	const r = await fetchAuthorFragmentRawByPath(path, authorOpts, env);
+	return r.data ?? null;
+}
+
+function mockResolveLoadTags(loadTags: ParsedLoadTag[]) {
+	return {
+		resolved: loadTags.map((tag, i) => ({
+			varName: tag.varName,
+			refExpression: tag.refExpression,
+			uuid: tag.refExpression === 'this' ? MOCK_CAMPAIGN_UUID : MOCK_OFFER_UUID,
+			modelId: `mock-model-${i}`,
+			fragmentPath: `/content/dam/mock/${tag.varName}`
+		})),
+		errors: [] as import('$lib/render/ajo-ref-resolver.js').RefResolutionError[]
+	};
+}
