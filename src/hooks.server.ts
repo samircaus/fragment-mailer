@@ -2,10 +2,25 @@
 // Populates event.locals.aem from the httpOnly session cookies set by /api/session.
 // Also adds basic request logging for observability.
 
-import type { Handle } from '@sveltejs/kit';
+import { redirect, type Handle } from '@sveltejs/kit';
+import { isUniversalEditorReferer } from '$lib/ue/context.js';
 
 export const handle: Handle = async ({ event, resolve }) => {
 	const start = Date.now();
+
+	// UE opens the configured preview URL in a single iframe. The editor shell embeds
+	// /preview in a nested iframe, which breaks the properties panel — serve preview HTML directly.
+	if (
+		event.request.method === 'GET' &&
+		isUniversalEditorReferer(event.request.headers.get('referer'))
+	) {
+		const editorMatch = event.url.pathname.match(/^\/editor\/([^/]+)\/?$/);
+		if (editorMatch) {
+			const target = new URL(`/preview/${editorMatch[1]}`, event.url.origin);
+			target.search = event.url.search;
+			redirect(302, `${target.pathname}${target.search}`);
+		}
+	}
 
 	// Populate AEM context from session cookies (written by /api/session or the UE bootstrap flow)
 	const token = event.cookies.get('aem_token');

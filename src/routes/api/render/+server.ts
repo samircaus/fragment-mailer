@@ -112,7 +112,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 			});
 		}
 		finalHtml = injectUEAttributes(finalHtml, bindings);
-		finalHtml = injectUEBody(finalHtml, cf.path, definition.cfModel || 'email');
+		finalHtml = injectUEBody(finalHtml, cf.path);
 	}
 
 	return json({

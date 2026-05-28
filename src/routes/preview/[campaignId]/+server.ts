@@ -98,7 +98,7 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
 		});
 	}
 	let html = injectUEAttributes(compileResult.html, bindings);
-	html = injectUEBody(html, cf.path, definition.cfModel || 'email');
+	html = injectUEBody(html, cf.path);
 	html = injectUEHead(
 		html,
 		env?.AEM_BASE_URL ?? 'https://author-p00000-e00000.adobeaemcloud.com',

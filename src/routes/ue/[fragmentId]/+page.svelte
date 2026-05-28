@@ -1,12 +1,12 @@
 <script lang="ts">
 	import type { PageData } from './$types';
+	import { cfUeResourceUrn } from '$lib/ue/context.js';
 
 	let { data }: { data: PageData } = $props();
 
 	const { fragment, model, authorHost, previewUrl } = data;
 
-	// JCR path for the UE resource identifier — points at the master variation
-	const ueResource = `urn:aemconnection:${fragment.path}/jcr:content/data/master`;
+	const ueResource = cfUeResourceUrn(fragment.path);
 
 	// Build a field-name → model metadata lookup for labels and types
 	const fieldMeta = new Map(model?.fields.map((f) => [f.name, f]) ?? []);

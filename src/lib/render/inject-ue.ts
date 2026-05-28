@@ -1,3 +1,5 @@
+import { cfUeResourceUrn } from '$lib/ue/context.js';
+
 // Universal Editor (UE) attribute injector.
 //
 // After MJML compiles to HTML, this module:
@@ -30,7 +32,7 @@ export function injectUEAttributes(html: string, bindings: UEBinding[]): string 
 		if (!result.includes(searchPattern)) continue;
 
 		// URN uses the "aemconnection" reference name declared in the page <meta> tag.
-		const aueResource = `urn:aemconnection:${binding.cfPath}`;
+		const aueResource = cfUeResourceUrn(binding.cfPath);
 		const aueType = mapFieldTypeToAUE(binding.fieldType);
 		const aueLabel = binding.fieldName.replace(/([A-Z])/g, ' $1').trim();
 
@@ -51,11 +53,12 @@ export function injectUEAttributes(html: string, bindings: UEBinding[]): string 
 // 2 ─────────────────────────────────────────────────────────────────────────
 // Stamp the <body> tag as the UE component root pointing to the CF resource.
 // UE uses this to scope in-context editing and load the right properties panel model.
-export function injectUEBody(html: string, cfPath: string, modelId: string): string {
-	const aueResource = escapeAttr(`urn:aemconnection:${cfPath}`);
+export function injectUEBody(html: string, cfPath: string, modelId?: string): string {
+	const aueResource = escapeAttr(cfUeResourceUrn(cfPath));
+	const modelAttr = modelId ? ` data-aue-model="${escapeAttr(modelId)}"` : '';
 	return html.replace(
 		/<body(\s|>)/,
-		`<body data-aue-resource="${aueResource}" data-aue-type="component" data-aue-model="${escapeAttr(modelId)}"$1`
+		`<body data-aue-resource="${aueResource}" data-aue-type="component"${modelAttr}$1`
 	);
 }
 
