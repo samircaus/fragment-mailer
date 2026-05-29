@@ -10,6 +10,15 @@ export interface TemplateFieldDefinition {
 	modelId?: string;
 }
 
+/** Row in the template picker (one per stored version). */
+export interface TemplatePickerItem {
+	id: string;
+	familyId: string;
+	name: string;
+	version: string;
+	isBuiltin: boolean;
+}
+
 export interface TemplateDefinition {
 	id: string;
 	name: string;

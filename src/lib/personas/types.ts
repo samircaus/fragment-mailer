@@ -24,3 +24,11 @@ export interface Brand {
 
 export type PersonaData = Omit<Persona, 'id'>;
 export type BrandData = Omit<Brand, 'id'>;
+
+export interface PersonaListItem extends Persona {
+	isBuiltin: boolean;
+}
+
+export interface BrandListItem extends Brand {
+	isBuiltin: boolean;
+}

@@ -3,14 +3,17 @@
 	import { onMount, tick } from 'svelte';
 	import { cfExperienceCloudEditorUrl, universalEditorCanvasUrl } from '$lib/aem/author-links.js';
 	import { type Persona } from '$lib/personas/samples.js';
-	import { validatePersonaData } from '$lib/personas/validate.js';
-	import { validateBrandData } from '$lib/brands/validate.js';
-	import type { Brand } from '$lib/personas/types.js';
+	import type { BrandListItem, PersonaListItem } from '$lib/personas/types.js';
+	import PreviewProfilesManager from '$lib/components/PreviewProfilesManager.svelte';
 	import { displayStatusHint, displayStatusLabel } from '$lib/db/attach-email-status.js';
 	import type { EmailStatusInfo } from '$lib/db/email-status-types.js';
 	import MjmlCodeEditor from '$lib/components/MjmlCodeEditor.svelte';
 	import type { AjoRequestFailure } from '$lib/ajo/client.js';
 	import { formatAjoPushError } from '$lib/ajo/format-push-error.js';
+	import {
+		parseEnvelopeHtmlComment,
+		type EmailEnvelope
+	} from '$lib/preview/envelope.js';
 
 	// ─── Types ──────────────────────────────────────────────────────────────────
 	interface Campaign {
@@ -25,8 +28,15 @@
 
 	interface TemplateInfo {
 		id: string;
+		familyId: string;
 		name: string;
 		version: string;
+		isBuiltin: boolean;
+	}
+
+	interface TemplateFamily {
+		familyId: string;
+		name: string;
 	}
 
 	interface FlatNode {
@@ -49,23 +59,21 @@
 	let mjmlCode = $state('');
 	let isDirty = $state(false);
 	let saveStatus = $state<'idle' | 'saving' | 'saved' | 'error'>('idle');
+	let saveVersionStatus = $state<'idle' | 'saving' | 'saved' | 'error'>('idle');
 	let templateLoadError = $state('');
 
 	// Template picker
-	let templatePickerOpen = $state(false);
+	let familyPickerOpen = $state(false);
+	let versionPickerOpen = $state(false);
+	let templateActionsOpen = $state(false);
+	let deleteVersionStatus = $state<'idle' | 'deleting' | 'error'>('idle');
 
 	// Persona picker
-	let personas = $state<Persona[]>([]);
-	let personaEditOpen = $state(false);
-	let personaEditJson = $state('');
-	let personaEditError = $state('');
-	let personaEditSaving = $state(false);
-	let brands = $state<Brand[]>([]);
+	let personas = $state<PersonaListItem[]>([]);
+	let brands = $state<BrandListItem[]>([]);
 	let selectedBrandId = $state('acme-corp');
-	let brandEditOpen = $state(false);
-	let brandEditJson = $state('');
-	let brandEditError = $state('');
-	let brandEditSaving = $state(false);
+	let previewActionsOpen = $state(false);
+	let previewManagerOpen = $state(false);
 
 	// New template inline form
 	let showNewForm = $state(false);
@@ -107,6 +115,7 @@
 	let previewChrome = $state<'light' | 'dark'>('light');
 	let previewWarnings = $state<string[]>([]);
 	let previewWarningsExpanded = $state(false);
+	let previewEnvelope = $state<EmailEnvelope | null>(null);
 	let iframeKey = $state(0);
 	let iframeEl = $state<HTMLIFrameElement | null>(null);
 	let ajoPushStatus = $state<'idle' | 'exporting' | 'done' | 'error'>('idle');
@@ -193,6 +202,9 @@
 		}
 
 		await Promise.all([loadCampaign(), loadTemplates(), loadPreviewContext()]);
+		if (campaign?.templateId) {
+			selectedTemplateId = resolveTemplateSelectionId(campaign.templateId, templates);
+		}
 	});
 
 	async function loadPreviewContext() {
@@ -202,14 +214,14 @@
 				fetch('/api/brands')
 			]);
 			if (personasRes.ok) {
-				const data = (await personasRes.json()) as { personas: Persona[] };
+				const data = (await personasRes.json()) as { personas: PersonaListItem[] };
 				personas = data.personas;
 				if (!personas.some((p) => p.id === selectedPersonaId) && personas[0]) {
 					selectedPersonaId = personas[0].id;
 				}
 			}
 			if (brandsRes.ok) {
-				const data = (await brandsRes.json()) as { brands: Brand[] };
+				const data = (await brandsRes.json()) as { brands: BrandListItem[] };
 				brands = data.brands;
 				if (!brands.some((b) => b.id === selectedBrandId) && brands[0]) {
 					selectedBrandId = brands[0].id;
@@ -289,9 +301,6 @@
 			if (!res.ok) throw new Error(`${res.status}`);
 			const data = (await res.json()) as { campaign: Campaign };
 			campaign = data.campaign;
-			if (data.campaign.templateId && !selectedTemplateId) {
-				selectedTemplateId = data.campaign.templateId;
-			}
 		} catch (err) {
 			console.error('Failed to load campaign:', err);
 		} finally {
@@ -376,6 +385,18 @@
 	}
 
 	// ─── Actions ─────────────────────────────────────────────────────────────────
+	function resolveTemplateSelectionId(campaignTemplateId: string, list: TemplateInfo[]): string {
+		const exact = list.find((t) => t.id === campaignTemplateId);
+		if (exact) return exact.id;
+		const familyMatch = list.filter(
+			(t) => t.familyId === campaignTemplateId || t.id === campaignTemplateId
+		);
+		if (familyMatch.length === 0) return campaignTemplateId;
+		return familyMatch.sort((a, b) =>
+			b.version.localeCompare(a.version, undefined, { numeric: true })
+		)[0]!.id;
+	}
+
 	async function handleSave() {
 		if (!selectedTemplateId || !mjmlCode) return;
 		saveStatus = 'saving';
@@ -393,6 +414,65 @@
 		} catch {
 			saveStatus = 'error';
 			setTimeout(() => (saveStatus = 'idle'), 3000);
+		}
+	}
+
+	async function handleSaveAsNewVersion() {
+		if (!selectedTemplateId || !mjmlCode || saveVersionStatus === 'saving') return;
+		templateActionsOpen = false;
+		saveVersionStatus = 'saving';
+		try {
+			const res = await fetch(`/api/templates/${selectedTemplateId}/versions`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ mjml: mjmlCode })
+			});
+			if (!res.ok) throw new Error(`${res.status}`);
+			const data = (await res.json()) as { id: string; version: string };
+			await loadTemplates();
+			selectedTemplateId = data.id;
+			isDirty = false;
+			saveVersionStatus = 'saved';
+			iframeKey += 1;
+			setTimeout(() => (saveVersionStatus = 'idle'), 2000);
+		} catch {
+			saveVersionStatus = 'error';
+			setTimeout(() => (saveVersionStatus = 'idle'), 3000);
+		}
+	}
+
+	async function handleDeleteVersion() {
+		if (!selectedTemplateId || !canDeleteVersion || deleteVersionStatus === 'deleting') return;
+		const versionLabel = selectedTemplate?.version ?? '';
+		if (!confirm(`Delete version v${versionLabel}? This cannot be undone.`)) return;
+
+		templateActionsOpen = false;
+		deleteVersionStatus = 'deleting';
+		const familyId = selectedTemplate!.familyId;
+		const fallbackId =
+			familyVersions.find((v) => v.id !== selectedTemplateId)?.id ??
+			templates.find((t) => t.familyId === familyId && t.id !== selectedTemplateId)?.id ??
+			'';
+
+		try {
+			const res = await fetch(`/api/templates/${selectedTemplateId}`, { method: 'DELETE' });
+			if (!res.ok) {
+				const data = (await res.json().catch(() => ({}))) as { message?: string };
+				throw new Error(data.message ?? `${res.status}`);
+			}
+			await loadTemplates();
+			selectedTemplateId =
+				fallbackId ||
+				resolveTemplateSelectionId(familyId, templates) ||
+				templates[0]?.id ||
+				'';
+			isDirty = false;
+			iframeKey += 1;
+			deleteVersionStatus = 'idle';
+		} catch (err) {
+			console.error('Failed to delete template version:', err);
+			deleteVersionStatus = 'error';
+			setTimeout(() => (deleteVersionStatus = 'idle'), 3000);
 		}
 	}
 
@@ -600,9 +680,29 @@
 		}
 	}
 
+	function extractPreviewEnvelope() {
+		const doc = iframeEl?.contentDocument;
+		if (!doc) {
+			previewEnvelope = null;
+			return;
+		}
+		const walker = doc.createTreeWalker(doc, NodeFilter.SHOW_COMMENT);
+		let node = walker.nextNode();
+		while (node) {
+			const parsed = parseEnvelopeHtmlComment(node.textContent ?? '');
+			if (parsed) {
+				previewEnvelope = parsed;
+				return;
+			}
+			node = walker.nextNode();
+		}
+		previewEnvelope = null;
+	}
+
 	function onPreviewIframeLoad() {
 		fitIframe();
 		extractPreviewWarnings();
+		extractPreviewEnvelope();
 	}
 
 	function personaChipLabel(persona: Persona): string {
@@ -764,9 +864,23 @@
 		}
 	}
 
-	function selectTemplate(id: string) {
+	function closeTemplatePickers() {
+		familyPickerOpen = false;
+		versionPickerOpen = false;
+		templateActionsOpen = false;
+	}
+
+	function selectFamily(familyId: string) {
+		const versions = templates
+			.filter((t) => t.familyId === familyId)
+			.sort((a, b) => b.version.localeCompare(a.version, undefined, { numeric: true }));
+		if (versions[0]) selectedTemplateId = versions[0].id;
+		closeTemplatePickers();
+	}
+
+	function selectVersion(id: string) {
 		selectedTemplateId = id;
-		templatePickerOpen = false;
+		closeTemplatePickers();
 	}
 
 	function handleDropdownKeydown(
@@ -800,120 +914,68 @@
 		iframeKey += 1;
 	}
 
-	function openBrandEdit() {
-		const brand = selectedBrand;
-		if (!brand) return;
-		brandEditError = '';
-		const { id: _id, ...editable } = brand;
-		brandEditJson = JSON.stringify(editable, null, 2);
-		brandEditOpen = true;
+	function closePreviewPickers() {
+		previewActionsOpen = false;
 	}
 
-	function closeBrandEdit() {
-		brandEditOpen = false;
-		brandEditError = '';
+	function openPreviewManager() {
+		previewActionsOpen = false;
+		previewManagerOpen = true;
 	}
 
-	async function saveBrandEdit() {
-		if (!selectedBrandId) return;
-		brandEditError = '';
-		let parsed: unknown;
-		try {
-			parsed = JSON.parse(brandEditJson);
-		} catch {
-			brandEditError = 'Invalid JSON syntax';
-			return;
-		}
+	type PreviewResourceItem = PersonaListItem | BrandListItem;
 
-		const result = validateBrandData(parsed, selectedBrandId);
-		if (!result.ok) {
-			brandEditError = result.error;
-			return;
-		}
-
-		brandEditSaving = true;
-		try {
-			const res = await fetch(`/api/brands/${encodeURIComponent(selectedBrandId)}`, {
-				method: 'PUT',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					label: result.brand.label,
-					name: result.brand.name,
-					logoUrl: result.brand.logoUrl,
-					privacyUrl: result.brand.privacyUrl
-				})
-			});
-			const data = (await res.json().catch(() => ({}))) as { brand?: Brand; message?: string };
-			if (!res.ok) throw new Error(data.message ?? `Save failed (${res.status})`);
-			const saved = data.brand ?? result.brand;
-			brands = brands.map((b) => (b.id === selectedBrandId ? saved : b));
-			brandEditOpen = false;
+	function handlePersonasChange(detail: { items: PreviewResourceItem[]; selectedId: string }) {
+		personas = detail.items as PersonaListItem[];
+		if (detail.selectedId && detail.selectedId !== selectedPersonaId) {
+			selectedPersonaId = detail.selectedId;
 			iframeKey += 1;
-		} catch (e) {
-			brandEditError = e instanceof Error ? e.message : 'Save failed';
-		} finally {
-			brandEditSaving = false;
-		}
-	}
-
-	function openPersonaEdit() {
-		const persona = personas.find((p) => p.id === selectedPersonaId);
-		if (!persona) return;
-		personaEditError = '';
-		const { id: _id, ...editable } = persona;
-		personaEditJson = JSON.stringify(editable, null, 2);
-		personaEditOpen = true;
-	}
-
-	function closePersonaEdit() {
-		personaEditOpen = false;
-		personaEditError = '';
-	}
-
-	async function savePersonaEdit() {
-		personaEditError = '';
-		let parsed: unknown;
-		try {
-			parsed = JSON.parse(personaEditJson);
-		} catch {
-			personaEditError = 'Invalid JSON syntax';
-			return;
-		}
-
-		const result = validatePersonaData(parsed, selectedPersonaId);
-		if (!result.ok) {
-			personaEditError = result.error;
-			return;
-		}
-
-		personaEditSaving = true;
-		try {
-			const res = await fetch(`/api/personas/${encodeURIComponent(selectedPersonaId)}`, {
-				method: 'PUT',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					label: result.persona.label,
-					person: result.persona.person,
-					loyalty: result.persona.loyalty
-				})
-			});
-			const data = (await res.json().catch(() => ({}))) as { persona?: Persona; message?: string };
-			if (!res.ok) throw new Error(data.message ?? `Save failed (${res.status})`);
-			const saved = data.persona ?? result.persona;
-			personas = personas.map((p) => (p.id === selectedPersonaId ? saved : p));
-			personaEditOpen = false;
+		} else if (!personas.some((p) => p.id === selectedPersonaId) && detail.selectedId) {
+			selectedPersonaId = detail.selectedId;
 			iframeKey += 1;
-		} catch (e) {
-			personaEditError = e instanceof Error ? e.message : 'Save failed';
-		} finally {
-			personaEditSaving = false;
+		} else if (detail.items.length) {
+			iframeKey += 1;
+		}
+	}
+
+	function handleBrandsChange(detail: { items: PreviewResourceItem[]; selectedId: string }) {
+		brands = detail.items as BrandListItem[];
+		if (detail.selectedId && detail.selectedId !== selectedBrandId) {
+			selectedBrandId = detail.selectedId;
+			iframeKey += 1;
+		} else if (!brands.some((b) => b.id === selectedBrandId) && detail.selectedId) {
+			selectedBrandId = detail.selectedId;
+			iframeKey += 1;
+		} else if (detail.items.length) {
+			iframeKey += 1;
 		}
 	}
 
 	// ─── Derived ─────────────────────────────────────────────────────────────────
 	const selectedTemplate = $derived(templates.find((t) => t.id === selectedTemplateId) ?? null);
+	const selectedFamilyId = $derived(selectedTemplate?.familyId ?? '');
+
+	const templateFamilies = $derived.by((): TemplateFamily[] => {
+		const seen = new Map<string, TemplateFamily>();
+		for (const t of templates) {
+			if (!seen.has(t.familyId)) {
+				seen.set(t.familyId, { familyId: t.familyId, name: t.name });
+			}
+		}
+		return [...seen.values()].sort((a, b) => a.name.localeCompare(b.name));
+	});
+
+	const familyVersions = $derived(
+		templates
+			.filter((t) => t.familyId === selectedFamilyId)
+			.sort((a, b) => b.version.localeCompare(a.version, undefined, { numeric: true }))
+	);
+
+	const canDeleteVersion = $derived(
+		Boolean(selectedTemplate && !selectedTemplate.isBuiltin && familyVersions.length > 1)
+	);
+
 	const selectedPersona = $derived(personas.find((p) => p.id === selectedPersonaId) ?? null);
-	const selectedBrand = $derived(brands.find((b) => b.id === selectedBrandId) ?? null);
 
 	const aemAuthorUrl = $derived($page.data?.aem?.authorUrl ?? $page.data?.ue?.aemBaseUrl ?? null);
 	const cfEditorTenant = $derived($page.data?.aem?.cfEditorTenant ?? 'psc');
@@ -944,10 +1006,11 @@
 		}
 	});
 
-	// Clear warnings while the preview iframe reloads
+	// Clear warnings and envelope while the preview iframe reloads
 	$effect(() => {
 		void iframeKey;
 		previewWarnings = [];
+		previewEnvelope = null;
 	});
 
 	const previewUrl = $derived.by(() => {
@@ -969,16 +1032,18 @@
 <svelte:window
 	onclick={(e) => {
 		const target = e.target;
-		if (target instanceof Element && target.closest('.add-menu, .add-child-btn')) return;
+		if (target instanceof Element && target.closest('.add-menu, .add-child-btn, .template-actions, .preview-actions')) return;
 		addMenuNode = null;
-		templatePickerOpen = false;
+		closeTemplatePickers();
+		closePreviewPickers();
 	}}
 	onkeydown={(e) => {
-		if (e.key === 'Escape' && personaEditOpen) {
-			closePersonaEdit();
+		if (e.key === 'Escape') {
+			closeTemplatePickers();
+			closePreviewPickers();
 		}
-		if (e.key === 'Escape' && brandEditOpen) {
-			closeBrandEdit();
+		if (e.key === 'Escape' && previewManagerOpen) {
+			previewManagerOpen = false;
 		}
 	}}
 />
@@ -1162,110 +1227,173 @@
 	<div class="panels" class:resizing={isResizingPanel}>
 		<!-- ─── Left panel ──────────────────────────────────────────────────── -->
 		<aside class="left-panel" style:width={`${leftPanelWidth}px`}>
-			<!-- Template picker -->
+			<!-- Template + version pickers -->
 			<div class="picker-bar">
-				<div class="picker-section">
-					<div class="picker-label">Template</div>
-					<div class="picker-controls">
-						<div class="dropdown" class:open={templatePickerOpen}>
-							<button
-								type="button"
-								class="dropdown-trigger"
-								class:placeholder={!selectedTemplate && templates.length > 0}
-								aria-haspopup="listbox"
-								aria-expanded={templatePickerOpen}
-								disabled={templates.length === 0}
-								onclick={(e) => {
-									e.stopPropagation();
-									templatePickerOpen = !templatePickerOpen;
-								}}
-								onkeydown={(e) =>
-									handleDropdownKeydown(e, templatePickerOpen, (open) => (templatePickerOpen = open))}
-							>
-								<span class="dropdown-value">
-									{#if templates.length === 0}
-										<span class="dropdown-primary">Loading templates…</span>
-									{:else if selectedTemplate}
-										<span class="dropdown-primary">{selectedTemplate.name}</span>
-										<span class="dropdown-meta">v{selectedTemplate.version}</span>
-									{:else}
-										<span class="dropdown-primary">Select template…</span>
-									{/if}
-								</span>
-								<svg
-									class="dropdown-chevron"
-									width="14"
-									height="14"
-									viewBox="0 0 14 14"
-									fill="none"
-									aria-hidden="true"
-								>
-									<path
-										d="M3.5 5.25 7 8.75l3.5-3.5"
-										stroke="currentColor"
-										stroke-width="1.5"
-										stroke-linecap="round"
-										stroke-linejoin="round"
-									/>
-								</svg>
-							</button>
-
-							{#if templatePickerOpen && templates.length > 0}
-								<ul
-									class="dropdown-menu"
-									role="listbox"
-									onclick={stopEventPropagation}
-									onkeydown={stopEventPropagation}
-								>
-									{#each templates as t (t.id)}
-										<li role="none">
-											<button
-												type="button"
-												class="dropdown-option"
-												class:selected={selectedTemplateId === t.id}
-												role="option"
-												aria-selected={selectedTemplateId === t.id}
-												onclick={() => selectTemplate(t.id)}
-											>
-												<span class="dropdown-option-body">
-													<span class="dropdown-option-primary">{t.name}</span>
-													<span class="dropdown-option-secondary mono">{t.id}</span>
-												</span>
-												{#if selectedTemplateId === t.id}
-													<svg
-														class="dropdown-option-check"
-														width="14"
-														height="14"
-														viewBox="0 0 14 14"
-														fill="none"
-														aria-hidden="true"
-													>
-														<path
-															d="M2.5 7.25 5.5 10.25 11.5 3.75"
-															stroke="currentColor"
-															stroke-width="1.5"
-															stroke-linecap="round"
-															stroke-linejoin="round"
-														/>
-													</svg>
-												{/if}
-											</button>
-										</li>
-									{/each}
-								</ul>
-							{/if}
-						</div>
+				<div class="picker-row">
+					<div class="dropdown dropdown-compact" class:open={familyPickerOpen}>
 						<button
-							class="picker-action-btn accent"
-							onclick={() => {
-								showNewForm = !showNewForm;
-								newTemplateName = '';
+							type="button"
+							class="dropdown-trigger dropdown-trigger-compact"
+							class:placeholder={!selectedTemplate && templates.length > 0}
+							aria-haspopup="listbox"
+							aria-expanded={familyPickerOpen}
+							aria-label="Template"
+							disabled={templates.length === 0}
+							onclick={(e) => {
+								e.stopPropagation();
+								versionPickerOpen = false;
+								templateActionsOpen = false;
+								familyPickerOpen = !familyPickerOpen;
 							}}
-							title="Create new template"
+							onkeydown={(e) =>
+								handleDropdownKeydown(e, familyPickerOpen, (open) => (familyPickerOpen = open))}
 						>
-							+ New
+							<span class="dropdown-value">
+								{#if templates.length === 0}
+									<span class="dropdown-primary">…</span>
+								{:else if selectedTemplate}
+									<span class="dropdown-primary">{selectedTemplate.name}</span>
+								{:else}
+									<span class="dropdown-primary">Template</span>
+								{/if}
+							</span>
+							<svg class="dropdown-chevron" width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+								<path d="M3.5 5.25 7 8.75l3.5-3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+							</svg>
 						</button>
+						{#if familyPickerOpen && templateFamilies.length > 0}
+							<ul class="dropdown-menu" role="listbox" onclick={stopEventPropagation} onkeydown={stopEventPropagation}>
+								{#each templateFamilies as family (family.familyId)}
+									<li role="none">
+										<button
+											type="button"
+											class="dropdown-option dropdown-option-compact"
+											class:selected={selectedFamilyId === family.familyId}
+											role="option"
+											aria-selected={selectedFamilyId === family.familyId}
+											onclick={() => selectFamily(family.familyId)}
+										>
+											<span class="dropdown-option-primary">{family.name}</span>
+										</button>
+									</li>
+								{/each}
+							</ul>
+						{/if}
 					</div>
+
+					<div class="dropdown dropdown-compact dropdown-version" class:open={versionPickerOpen}>
+						<button
+							type="button"
+							class="dropdown-trigger dropdown-trigger-compact"
+							aria-haspopup="listbox"
+							aria-expanded={versionPickerOpen}
+							aria-label="Version"
+							disabled={familyVersions.length === 0}
+							onclick={(e) => {
+								e.stopPropagation();
+								familyPickerOpen = false;
+								templateActionsOpen = false;
+								versionPickerOpen = !versionPickerOpen;
+							}}
+							onkeydown={(e) =>
+								handleDropdownKeydown(e, versionPickerOpen, (open) => (versionPickerOpen = open))}
+						>
+							<span class="dropdown-value">
+								<span class="dropdown-primary mono">
+									{selectedTemplate ? `v${selectedTemplate.version}` : 'v—'}
+								</span>
+							</span>
+							<svg class="dropdown-chevron" width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+								<path d="M3.5 5.25 7 8.75l3.5-3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+							</svg>
+						</button>
+						{#if versionPickerOpen && familyVersions.length > 0}
+							<ul class="dropdown-menu" role="listbox" onclick={stopEventPropagation} onkeydown={stopEventPropagation}>
+								{#each familyVersions as v (v.id)}
+									<li role="none">
+										<button
+											type="button"
+											class="dropdown-option dropdown-option-compact"
+											class:selected={selectedTemplateId === v.id}
+											role="option"
+											aria-selected={selectedTemplateId === v.id}
+											onclick={() => selectVersion(v.id)}
+										>
+											<span class="dropdown-option-primary mono">v{v.version}</span>
+											{#if v.isBuiltin}
+												<span class="dropdown-option-tag">built-in</span>
+											{/if}
+										</button>
+									</li>
+								{/each}
+							</ul>
+						{/if}
+					</div>
+
+					<div class="template-actions" class:open={templateActionsOpen}>
+						<button
+							type="button"
+							class="dropdown-trigger dropdown-trigger-compact template-actions-btn"
+							aria-haspopup="menu"
+							aria-expanded={templateActionsOpen}
+							aria-label="Template actions"
+							disabled={!selectedTemplateId}
+							onclick={(e) => {
+								e.stopPropagation();
+								familyPickerOpen = false;
+								versionPickerOpen = false;
+								templateActionsOpen = !templateActionsOpen;
+							}}
+						>
+							<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+								<circle cx="7" cy="3" r="1" fill="currentColor" />
+								<circle cx="7" cy="7" r="1" fill="currentColor" />
+								<circle cx="7" cy="11" r="1" fill="currentColor" />
+							</svg>
+						</button>
+						{#if templateActionsOpen}
+							<ul class="dropdown-menu template-actions-menu" role="menu" onclick={stopEventPropagation} onkeydown={stopEventPropagation}>
+								<li role="none">
+									<button
+										type="button"
+										class="dropdown-option dropdown-option-compact"
+										role="menuitem"
+										disabled={saveVersionStatus === 'saving' || !selectedTemplateId}
+										onclick={handleSaveAsNewVersion}
+									>
+										{saveVersionStatus === 'saving' ? 'Saving new version…' : 'Save as new version'}
+									</button>
+								</li>
+								<li role="none">
+									<button
+										type="button"
+										class="dropdown-option dropdown-option-compact dropdown-option-danger"
+										role="menuitem"
+										disabled={!canDeleteVersion || deleteVersionStatus === 'deleting'}
+										title={canDeleteVersion
+											? 'Remove this version permanently'
+											: selectedTemplate?.isBuiltin
+												? 'Built-in versions cannot be deleted'
+												: 'Keep at least one version'}
+										onclick={handleDeleteVersion}
+									>
+										{deleteVersionStatus === 'deleting' ? 'Deleting…' : 'Delete this version'}
+									</button>
+								</li>
+							</ul>
+						{/if}
+					</div>
+
+					<button
+						class="picker-action-btn picker-action-btn-compact accent"
+						onclick={() => {
+							showNewForm = !showNewForm;
+							newTemplateName = '';
+						}}
+						title="Create new template"
+					>
+						+ New
+					</button>
 				</div>
 			</div>
 
@@ -1304,28 +1432,14 @@
 
 			<!-- Tab bar -->
 			<div class="tab-bar">
-				<div class="tab-group" class:active={activeTab === 'code'}>
-					<button type="button" class="tab tab-code" onclick={() => (activeTab = 'code')}>Code</button>
-					<a
-						href="https://documentation.mjml.io/#mjml-guide"
-						target="_blank"
-						rel="noopener noreferrer"
-						class="mjml-docs-link"
-						title="MJML documentation"
-						aria-label="MJML documentation"
-					>
-						<svg width="10" height="10" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-							<rect width="14" height="14" rx="3" fill="#f45e43" />
-							<path
-								d="M3.75 10V4.25L6.5 7.5 9.25 4.25V10"
-								stroke="#fff"
-								stroke-width="1.2"
-								stroke-linecap="round"
-								stroke-linejoin="round"
-							/>
-						</svg>
-					</a>
-				</div>
+				<button
+					type="button"
+					class="tab"
+					class:active={activeTab === 'code'}
+					onclick={() => (activeTab = 'code')}
+				>
+					Code
+				</button>
 				<button type="button" class="tab" class:active={activeTab === 'tree'} onclick={() => (activeTab = 'tree')}>
 					Structure
 				</button>
@@ -1349,6 +1463,15 @@
 								onsave={handleSave}
 							/>
 						{/if}
+						<a
+							href="https://documentation.mjml.io/#mjml-guide"
+							target="_blank"
+							rel="noopener noreferrer"
+							class="mjml-docs-link"
+							title="MJML documentation"
+						>
+							MJML docs ↗
+						</a>
 					</div>
 				{:else if activeTab === 'html'}
 					<div class="editor-wrap html-panel">
@@ -1417,6 +1540,9 @@
 					{#if isDirty}
 						<span class="dirty-indicator" title="Unsaved changes">●</span>
 					{/if}
+					{#if saveVersionStatus === 'saved'}
+						<span class="footer-hint" title="New version created">New version ✓</span>
+					{/if}
 					<button
 						type="button"
 						class="save-btn"
@@ -1424,12 +1550,13 @@
 						class:saved={saveStatus === 'saved'}
 						class:save-error={saveStatus === 'error'}
 						onclick={handleSave}
-						disabled={saveStatus === 'saving' || !selectedTemplateId}
+						disabled={saveStatus === 'saving' || saveVersionStatus === 'saving' || !selectedTemplateId}
+						title="Update the current template version in place"
 					>
 						{#if saveStatus === 'saving'}Saving…
 						{:else if saveStatus === 'saved'}Saved ✓
 						{:else if saveStatus === 'error'}Save failed
-						{:else}Save Template{/if}
+						{:else}Save{/if}
 					</button>
 				</div>
 			</div>
@@ -1459,70 +1586,73 @@
 		>
 			{#if !isLoading}
 				<header class="preview-toolbar">
-					<div class="preview-toolbar-section">
-						<label class="preview-toolbar-label" for="preview-persona-select">Persona</label>
-						<select
-							id="preview-persona-select"
-							class="preview-toolbar-select"
-							value={selectedPersonaId}
-							disabled={personas.length === 0}
-							onchange={(e) => selectPersona(e.currentTarget.value)}
-						>
-							{#each personas as p (p.id)}
-								<option value={p.id} title={p.label}>{personaChipLabel(p)}</option>
-							{/each}
-						</select>
-						<button
-							type="button"
-							class="preview-icon-btn"
-							onclick={openPersonaEdit}
-							disabled={!selectedPersona}
-							title="Edit persona profile JSON"
-							aria-label="Edit persona"
-						>
-							<svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-								<path
-									d="M9.25 2.75 11.25 4.75 4.75 11.25H2.75V9.25l6.5-6.5z"
-									stroke="currentColor"
-									stroke-width="1.25"
-									stroke-linejoin="round"
-								/>
-							</svg>
-						</button>
-					</div>
+					<div class="preview-toolbar-section preview-toolbar-profiles">
+						<div class="preview-toolbar-section">
+							<label class="preview-toolbar-label" for="preview-persona-select">Persona</label>
+							<select
+								id="preview-persona-select"
+								class="preview-toolbar-select"
+								value={selectedPersonaId}
+								disabled={personas.length === 0}
+								onchange={(e) => selectPersona(e.currentTarget.value)}
+							>
+								{#each personas as p (p.id)}
+									<option value={p.id} title={p.label}>{personaChipLabel(p)}</option>
+								{/each}
+							</select>
+						</div>
 
-					<div class="preview-toolbar-divider" aria-hidden="true"></div>
+						<div class="preview-toolbar-divider" aria-hidden="true"></div>
 
-					<div class="preview-toolbar-section">
-						<label class="preview-toolbar-label" for="preview-brand-select">Brand</label>
-						<select
-							id="preview-brand-select"
-							class="preview-toolbar-select"
-							value={selectedBrandId}
-							disabled={brands.length === 0}
-							onchange={(e) => selectBrand(e.currentTarget.value)}
-						>
-							{#each brands as brand (brand.id)}
-								<option value={brand.id}>{brand.label}</option>
-							{/each}
-						</select>
-						<button
-							type="button"
-							class="preview-icon-btn"
-							onclick={openBrandEdit}
-							disabled={!selectedBrand}
-							title="Edit brand preview settings"
-							aria-label="Edit brand"
-						>
-							<svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-								<path
-									d="M9.25 2.75 11.25 4.75 4.75 11.25H2.75V9.25l6.5-6.5z"
-									stroke="currentColor"
-									stroke-width="1.25"
-									stroke-linejoin="round"
-								/>
-							</svg>
-						</button>
+						<div class="preview-toolbar-section">
+							<label class="preview-toolbar-label" for="preview-brand-select">Brand</label>
+							<select
+								id="preview-brand-select"
+								class="preview-toolbar-select"
+								value={selectedBrandId}
+								disabled={brands.length === 0}
+								onchange={(e) => selectBrand(e.currentTarget.value)}
+							>
+								{#each brands as brand (brand.id)}
+									<option value={brand.id}>{brand.label}</option>
+								{/each}
+							</select>
+						</div>
+
+						<div class="preview-actions" class:open={previewActionsOpen}>
+							<button
+								type="button"
+								class="preview-actions-btn"
+								aria-haspopup="menu"
+								aria-expanded={previewActionsOpen}
+								aria-label="Preview data actions"
+								disabled={personas.length === 0 && brands.length === 0}
+								onclick={(e) => {
+									e.stopPropagation();
+									previewActionsOpen = !previewActionsOpen;
+								}}
+							>
+								<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+									<circle cx="7" cy="3" r="1" fill="currentColor" />
+									<circle cx="7" cy="7" r="1" fill="currentColor" />
+									<circle cx="7" cy="11" r="1" fill="currentColor" />
+								</svg>
+							</button>
+							{#if previewActionsOpen}
+								<ul class="preview-actions-menu" role="menu" onclick={stopEventPropagation} onkeydown={stopEventPropagation}>
+									<li role="none">
+										<button
+											type="button"
+											class="preview-actions-item"
+											role="menuitem"
+											onclick={openPreviewManager}
+										>
+											Manage
+										</button>
+									</li>
+								</ul>
+							{/if}
+						</div>
 					</div>
 
 					<div class="preview-toolbar-spacer"></div>
@@ -1657,7 +1787,45 @@
 					<span>Loading…</span>
 				</div>
 			{:else}
-				<div class="preview-stage">
+				{#if previewEnvelope}
+					<div
+						class="preview-envelope"
+						class:preview-envelope-warn={previewEnvelope.unresolved.length > 0}
+						role="group"
+						aria-label="Email envelope preview"
+					>
+						<p class="preview-envelope-line">
+							<span class="preview-envelope-item">
+								<span class="preview-envelope-label">Subject</span>
+								<span class="preview-envelope-value" title={previewEnvelope.subject}>
+									{previewEnvelope.subject || '—'}
+								</span>
+							</span>
+							<span class="preview-envelope-sep" aria-hidden="true">·</span>
+							<span class="preview-envelope-item">
+								<span class="preview-envelope-label">From</span>
+								<span class="preview-envelope-value" title={previewEnvelope.from}>
+									{previewEnvelope.from || '—'}
+								</span>
+							</span>
+							<span class="preview-envelope-sep" aria-hidden="true">·</span>
+							<span class="preview-envelope-item">
+								<span class="preview-envelope-label">Preheader</span>
+								<span class="preview-envelope-value" title={previewEnvelope.preheader}>
+									{previewEnvelope.preheader || '—'}
+								</span>
+							</span>
+						</p>
+						{#if previewEnvelope.unresolved.length > 0}
+							<p class="preview-envelope-hint">
+								Unresolved:
+								{previewEnvelope.unresolved.map((p) => `{{${p}}}`).join(', ')}
+							</p>
+						{/if}
+					</div>
+				{/if}
+
+				<div class="preview-stage" class:preview-stage-with-envelope={!!previewEnvelope}>
 					<div
 						class="preview-frame-shell"
 						style:width="{previewViewport === 'mobile'
@@ -1681,54 +1849,16 @@
 </div>
 
 <!-- Add-component context menu (fixed-positioned) -->
-{#if personaEditOpen}
-	<div class="persona-dialog-layer" role="presentation">
-		<button
-			type="button"
-			class="persona-dialog-backdrop"
-			aria-label="Close dialog"
-			onclick={closePersonaEdit}
-		></button>
-		<div
-			class="persona-dialog"
-			role="dialog"
-			aria-modal="true"
-			tabindex="-1"
-			aria-labelledby="persona-dialog-title"
-		>
-			<header class="persona-dialog-header">
-				<div>
-					<h2 id="persona-dialog-title" class="persona-dialog-title">Edit persona</h2>
-					<p class="persona-dialog-subtitle">
-						Profile fields used for <code>{'{{profile.*}}'}</code> preview tokens
-					</p>
-				</div>
-				<button type="button" class="persona-dialog-close" onclick={closePersonaEdit} aria-label="Close">
-					×
-				</button>
-			</header>
-
-			<textarea
-				class="persona-json-editor"
-				bind:value={personaEditJson}
-				spellcheck={false}
-				autocomplete="off"
-				autocapitalize="off"
-			></textarea>
-
-			{#if personaEditError}
-				<div class="persona-dialog-error">{personaEditError}</div>
-			{/if}
-
-			<footer class="persona-dialog-footer">
-				<button type="button" class="btn-cancel" onclick={closePersonaEdit}>Cancel</button>
-				<button type="button" class="btn-create" onclick={savePersonaEdit} disabled={personaEditSaving}>
-					{personaEditSaving ? 'Saving…' : 'Save & Preview'}
-				</button>
-			</footer>
-		</div>
-	</div>
-{/if}
+<PreviewProfilesManager
+	open={previewManagerOpen}
+	personas={personas}
+	brands={brands}
+	selectedPersonaId={selectedPersonaId}
+	selectedBrandId={selectedBrandId}
+	onclose={() => (previewManagerOpen = false)}
+	onpersonaschange={handlePersonasChange}
+	onbrandschange={handleBrandsChange}
+/>
 
 {#if ajoErrorDialogOpen}
 	<div class="persona-dialog-layer" role="presentation">
@@ -1810,55 +1940,6 @@
 
 			<footer class="persona-dialog-footer">
 				<button type="button" class="btn-create" onclick={closeAjoErrorDialog}>OK</button>
-			</footer>
-		</div>
-	</div>
-{/if}
-
-{#if brandEditOpen}
-	<div class="persona-dialog-layer" role="presentation">
-		<button
-			type="button"
-			class="persona-dialog-backdrop"
-			aria-label="Close dialog"
-			onclick={closeBrandEdit}
-		></button>
-		<div
-			class="persona-dialog"
-			role="dialog"
-			aria-modal="true"
-			tabindex="-1"
-			aria-labelledby="brand-dialog-title"
-		>
-			<header class="persona-dialog-header">
-				<div>
-					<h2 id="brand-dialog-title" class="persona-dialog-title">Edit brand</h2>
-					<p class="persona-dialog-subtitle">
-						Values used for <code>{'{{static.companyName}}'}</code> and related preview tokens
-					</p>
-				</div>
-				<button type="button" class="persona-dialog-close" onclick={closeBrandEdit} aria-label="Close">
-					×
-				</button>
-			</header>
-
-			<textarea
-				class="persona-json-editor"
-				bind:value={brandEditJson}
-				spellcheck={false}
-				autocomplete="off"
-				autocapitalize="off"
-			></textarea>
-
-			{#if brandEditError}
-				<div class="persona-dialog-error">{brandEditError}</div>
-			{/if}
-
-			<footer class="persona-dialog-footer">
-				<button type="button" class="btn-cancel" onclick={closeBrandEdit}>Cancel</button>
-				<button type="button" class="btn-create" onclick={saveBrandEdit} disabled={brandEditSaving}>
-					{brandEditSaving ? 'Saving…' : 'Save & Preview'}
-				</button>
 			</footer>
 		</div>
 	</div>
@@ -2159,7 +2240,6 @@
 		border-right: none;
 		display: flex;
 		flex-direction: column;
-		overflow: hidden;
 		min-height: 0;
 		min-width: 0;
 	}
@@ -2204,35 +2284,35 @@
 
 	/* Template picker */
 	.picker-bar {
-		padding: 10px 14px;
+		padding: 8px 12px;
 		border-bottom: 1px solid #f0f0f1;
 		flex-shrink: 0;
+		position: relative;
+		z-index: 30;
+		background: #fff;
 	}
 
-	.picker-section {
+	.picker-row {
 		display: flex;
-		flex-direction: column;
 		gap: 6px;
-	}
-
-	.picker-label {
-		font-size: 10px;
-		font-weight: 700;
-		text-transform: uppercase;
-		letter-spacing: 0.6px;
-		color: #a1a1aa;
-	}
-
-	.picker-controls {
-		display: flex;
-		gap: 8px;
-		align-items: stretch;
+		align-items: center;
+		min-width: 0;
 	}
 
 	.dropdown {
 		position: relative;
 		flex: 1;
 		min-width: 0;
+	}
+
+	.dropdown-compact {
+		flex: 1;
+		min-width: 0;
+	}
+
+	.dropdown-version {
+		flex: 0 0 88px;
+		max-width: 108px;
 	}
 
 	.dropdown-trigger {
@@ -2253,19 +2333,37 @@
 		transition: background 0.12s, color 0.12s;
 	}
 
+	.dropdown-trigger-compact {
+		height: 30px;
+		padding: 0 8px;
+		font-size: 12px;
+		border-radius: 6px;
+		background: transparent;
+	}
+
+	.dropdown-trigger-compact:hover:not(:disabled) {
+		background: rgba(0, 0, 0, 0.04);
+	}
+
+	.dropdown-trigger-compact:focus-visible,
+	.dropdown.open .dropdown-trigger-compact {
+		background: rgba(0, 0, 0, 0.04);
+		box-shadow: none;
+	}
+
 	.dropdown-trigger:hover:not(:disabled) {
 		background: #ececed;
 	}
 
 	.dropdown-trigger:focus-visible,
-	.dropdown.open .dropdown-trigger {
-		background: #ededfc;
+	.dropdown.open .dropdown-trigger:not(.dropdown-trigger-compact) {
+		background: #ececed;
+		box-shadow: inset 0 0 0 1px #d4d4d8;
 	}
 
 	.dropdown-trigger:disabled {
 		opacity: 0.55;
 		cursor: default;
-		background: #f4f4f5;
 	}
 
 	.dropdown-trigger.placeholder .dropdown-primary {
@@ -2288,13 +2386,6 @@
 		text-overflow: ellipsis;
 	}
 
-	.dropdown-meta {
-		flex-shrink: 0;
-		font-size: 11px;
-		font-weight: 500;
-		color: #a1a1aa;
-	}
-
 	.dropdown-chevron {
 		flex-shrink: 0;
 		color: #71717a;
@@ -2303,15 +2394,74 @@
 
 	.dropdown.open .dropdown-chevron {
 		transform: rotate(180deg);
-		color: #5b5bd6;
+	}
+
+	.dropdown-option-compact {
+		padding: 6px 10px;
+		gap: 6px;
+	}
+
+	.dropdown-option-compact .dropdown-option-primary {
+		font-size: 12px;
+	}
+
+	.dropdown-option-tag {
+		margin-left: auto;
+		font-size: 10px;
+		font-weight: 500;
+		color: #a1a1aa;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+	}
+
+	.dropdown-option-danger {
+		color: #dc2626;
+	}
+
+	.dropdown-option-danger:hover:not(:disabled) {
+		background: #fef2f2;
+	}
+
+	.dropdown-option-danger:disabled {
+		color: #d4d4d8;
+	}
+
+	.template-actions {
+		position: relative;
+		flex-shrink: 0;
+	}
+
+	.template-actions-btn {
+		width: 28px;
+		min-width: 28px;
+		flex-shrink: 0;
+		padding: 0;
+		justify-content: center;
+		color: #71717a;
+	}
+
+	.template-actions-menu {
+		left: auto;
+		right: 0;
+		width: max-content;
+		min-width: 168px;
+		max-width: min(240px, 90vw);
+		white-space: nowrap;
+	}
+
+	.dropdown-version .dropdown-menu {
+		left: 0;
+		right: auto;
+		width: max-content;
+		min-width: 100%;
 	}
 
 	.dropdown-menu {
 		position: absolute;
-		top: calc(100% + 6px);
+		top: calc(100% + 4px);
 		left: 0;
 		right: 0;
-		z-index: 50;
+		z-index: 60;
 		margin: 0;
 		padding: 6px;
 		list-style: none;
@@ -2403,6 +2553,25 @@
 	.dropdown-option-check {
 		flex-shrink: 0;
 		color: #5b5bd6;
+	}
+
+	.picker-action-btn-compact {
+		height: 30px;
+		padding: 0 10px;
+		font-size: 11px;
+		border-radius: 6px;
+		background: transparent;
+		flex-shrink: 0;
+	}
+
+	.picker-action-btn-compact.accent {
+		background: transparent;
+		color: #5b5bd6;
+	}
+
+	.picker-action-btn-compact.accent:hover:not(:disabled) {
+		background: rgba(91, 91, 214, 0.08);
+		color: #4f4ec9;
 	}
 
 	.picker-action-btn {
@@ -2688,49 +2857,6 @@
 		background: #fafafa;
 	}
 
-	.tab-group {
-		position: relative;
-		flex: 1;
-		min-width: 0;
-		border-bottom: 2px solid transparent;
-		margin-bottom: -1px;
-	}
-
-	.tab-group.active {
-		border-bottom-color: #5b5bd6;
-	}
-
-	.tab-group.active .tab-code {
-		color: #5b5bd6;
-	}
-
-	.tab-code {
-		width: 100%;
-		border-bottom: none;
-		margin-bottom: 0;
-	}
-
-	.mjml-docs-link {
-		position: absolute;
-		right: 8px;
-		top: 50%;
-		transform: translateY(-50%);
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		line-height: 0;
-		border-radius: 3px;
-		opacity: 0.85;
-		transition:
-			opacity 0.12s,
-			transform 0.12s;
-	}
-
-	.mjml-docs-link:hover {
-		opacity: 1;
-		transform: translateY(-50%) scale(1.08);
-	}
-
 	.tab {
 		flex: 1;
 		height: 34px;
@@ -2763,11 +2889,31 @@
 
 	/* Code tab */
 	.editor-wrap {
+		position: relative;
 		flex: 1 1 0;
 		min-height: 0;
 		display: flex;
 		flex-direction: column;
 		overflow: hidden;
+	}
+
+	.mjml-docs-link {
+		position: absolute;
+		right: 14px;
+		bottom: 2px;
+		z-index: 5;
+		font-size: 11px;
+		font-weight: 500;
+		color: rgba(113, 113, 122, 0.45);
+		text-decoration: none;
+		white-space: nowrap;
+		padding: 4px 0;
+		pointer-events: auto;
+		transition: color 0.12s;
+	}
+
+	.mjml-docs-link:hover {
+		color: #5b5bd6;
 	}
 
 	.mjml-editor {
@@ -2932,6 +3078,13 @@
 		line-height: 1;
 	}
 
+	.footer-hint {
+		font-size: 11px;
+		font-weight: 500;
+		color: #16a34a;
+		flex-shrink: 0;
+	}
+
 	.save-btn {
 		height: 32px;
 		padding: 0 16px;
@@ -2960,6 +3113,11 @@
 	}
 	.save-btn.save-error {
 		background: #dc2626;
+	}
+
+	.dropdown-primary.mono {
+		font-family: 'SF Mono', 'Fira Code', monospace;
+		font-size: 11px;
 	}
 
 	/* ── Preview area ────────────────────────────────────────────────────────── */
@@ -2998,6 +3156,10 @@
 		align-items: center;
 		gap: 8px;
 		min-width: 0;
+	}
+
+	.preview-toolbar-profiles {
+		gap: 10px;
 	}
 
 	.preview-toolbar-controls {
@@ -3068,6 +3230,78 @@
 	.preview-toolbar-select:disabled {
 		opacity: 0.5;
 		cursor: default;
+	}
+
+	.preview-actions {
+		position: relative;
+		flex-shrink: 0;
+	}
+
+	.preview-actions-btn {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 24px;
+		height: 24px;
+		border: none;
+		border-radius: 6px;
+		background: transparent;
+		color: #71717a;
+		cursor: pointer;
+	}
+
+	.preview-actions-btn:hover:not(:disabled) {
+		background: rgba(0, 0, 0, 0.06);
+		color: #3f3f46;
+	}
+
+	.preview-chrome-dark .preview-actions-btn {
+		color: #a1a1aa;
+	}
+
+	.preview-chrome-dark .preview-actions-btn:hover:not(:disabled) {
+		background: rgba(255, 255, 255, 0.08);
+		color: #e4e4e7;
+	}
+
+	.preview-actions-btn:disabled {
+		opacity: 0.45;
+		cursor: default;
+	}
+
+	.preview-actions-menu {
+		position: absolute;
+		top: calc(100% + 4px);
+		right: 0;
+		z-index: 60;
+		margin: 0;
+		padding: 6px;
+		list-style: none;
+		background: #fff;
+		border-radius: 10px;
+		box-shadow:
+			0 2px 8px rgba(0, 0, 0, 0.06),
+			0 12px 32px rgba(0, 0, 0, 0.1);
+		min-width: 168px;
+		white-space: nowrap;
+	}
+
+	.preview-actions-item {
+		display: block;
+		width: 100%;
+		padding: 8px 10px;
+		border: none;
+		border-radius: 6px;
+		background: transparent;
+		text-align: left;
+		font-size: 13px;
+		font-weight: 500;
+		color: #18181b;
+		cursor: pointer;
+	}
+
+	.preview-actions-item:hover {
+		background: #f4f4f5;
 	}
 
 	.preview-icon-btn {
@@ -3190,6 +3424,88 @@
 		margin-top: 4px;
 	}
 
+	.preview-envelope {
+		flex-shrink: 0;
+		padding: 14px 24px 0;
+		max-width: 100%;
+	}
+
+	.preview-envelope-line {
+		margin: 0;
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 6px 10px;
+		font-size: 11px;
+		line-height: 1.5;
+		color: #71717a;
+	}
+
+	.preview-chrome-dark .preview-envelope-line {
+		color: #a1a1aa;
+	}
+
+	.preview-envelope-item {
+		display: inline-flex;
+		align-items: baseline;
+		gap: 5px;
+		min-width: 0;
+		max-width: 100%;
+	}
+
+	.preview-envelope-sep {
+		color: #d4d4d8;
+		user-select: none;
+	}
+
+	.preview-chrome-dark .preview-envelope-sep {
+		color: #52525b;
+	}
+
+	.preview-envelope-label {
+		flex-shrink: 0;
+		font-size: 10px;
+		font-weight: 600;
+		letter-spacing: 0.03em;
+		text-transform: uppercase;
+		color: #a1a1aa;
+	}
+
+	.preview-chrome-dark .preview-envelope-label {
+		color: #71717a;
+	}
+
+	.preview-envelope-value {
+		color: #52525b;
+		font-weight: 500;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		max-width: min(28vw, 320px);
+	}
+
+	.preview-chrome-dark .preview-envelope-value {
+		color: #d4d4d8;
+	}
+
+	.preview-envelope-warn .preview-envelope-value {
+		color: #b45309;
+	}
+
+	.preview-chrome-dark .preview-envelope-warn .preview-envelope-value {
+		color: #fbbf24;
+	}
+
+	.preview-envelope-hint {
+		margin: 6px 0 0;
+		font-size: 10px;
+		color: #b45309;
+	}
+
+	.preview-chrome-dark .preview-envelope-hint {
+		color: #d97706;
+	}
+
 	.preview-loading {
 		display: flex;
 		align-items: center;
@@ -3225,6 +3541,10 @@
 		display: flex;
 		justify-content: center;
 		padding: 24px;
+	}
+
+	.preview-stage-with-envelope {
+		padding-top: 20px;
 	}
 
 	.preview-frame-shell {

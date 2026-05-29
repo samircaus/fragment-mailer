@@ -24,6 +24,10 @@ import { flattenPersona, resolvePreviewPersona } from '$lib/personas/validate.js
 import { getPersonaById } from '$lib/personas/service.js';
 import { resolveBrand } from '$lib/brands/service.js';
 import { applyPreviewColorScheme } from '$lib/preview/color-scheme-preview.js';
+import {
+	formatEnvelopeHtmlComment,
+	resolveEmailEnvelope
+} from '$lib/preview/envelope.js';
 import { buildStaticContext } from '$lib/preview/static-context.js';
 import { getCampaignWithCF } from '$lib/campaigns/service.js';
 import { resolveAppEnv } from '$lib/server/app-env.js';
@@ -77,6 +81,12 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
 	const instrumentedMJML = instrumentCFOutputTokens(mjml);
 	const discoveredBindings = collectCFOutputBindings(mjml);
 
+	const envelope = resolveEmailEnvelope({
+		mjml,
+		context,
+		templateName: definition.name
+	});
+
 	// Resolve tokens
 	const { html: resolvedMJML, warnings: resolveWarnings } = resolve(instrumentedMJML, context);
 
@@ -116,12 +126,13 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
 		...validationWarnings.map(formatValidationWarning)
 	];
 
+	const htmlComments = [formatEnvelopeHtmlComment(envelope)];
 	if (allWarnings.length > 0) {
-		const warningBlock = allWarnings
-			.map((w) => `<!-- FRAGMENT_MAILER_WARNING: ${w} -->`)
-			.join('\n');
-		html = html.replace('</body>', `\n${warningBlock}\n</body>`);
+		htmlComments.push(
+			...allWarnings.map((w) => `<!-- FRAGMENT_MAILER_WARNING: ${w} -->`)
+		);
 	}
+	html = html.replace('</body>', `\n${htmlComments.join('\n')}\n</body>`);
 
 	html = applyPreviewColorScheme(html, previewColorScheme);
 

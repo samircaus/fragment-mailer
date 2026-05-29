@@ -4,10 +4,14 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { z } from 'zod';
-import { createTemplate, listTemplates, loadTemplate } from '$lib/templates/service.js';
+import {
+	createTemplate,
+	listTemplatePickerItems,
+	loadTemplate
+} from '$lib/templates/service.js';
 
 export const GET: RequestHandler = async ({ platform }) => {
-	return json({ templates: await listTemplates(platform) });
+	return json({ templates: await listTemplatePickerItems(platform) });
 };
 
 const DEFAULT_MJML = `<mjml>

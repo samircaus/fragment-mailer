@@ -4,7 +4,12 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { z } from 'zod';
-import { loadTemplate, saveTemplateMJML, updateTemplate } from '$lib/templates/service.js';
+import {
+	deleteTemplateVersion,
+	loadTemplate,
+	saveTemplateMJML,
+	updateTemplate
+} from '$lib/templates/service.js';
 
 export const GET: RequestHandler = async ({ params, platform }) => {
 	const result = await loadTemplate(platform, params.id);
@@ -62,5 +67,14 @@ export const PUT: RequestHandler = async ({ params, request, platform }) => {
 	});
 	if (result.error) throw error(404, result.error);
 
+	return json({ ok: true });
+};
+
+export const DELETE: RequestHandler = async ({ params, platform }) => {
+	const result = await deleteTemplateVersion(platform, params.id);
+	if (result.error) {
+		const status = result.error.includes('Built-in') ? 403 : result.error.includes('only version') ? 409 : 404;
+		throw error(status, result.error);
+	}
 	return json({ ok: true });
 };

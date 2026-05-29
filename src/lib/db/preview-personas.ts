@@ -124,6 +124,19 @@ export async function updatePersonaRow(
 	return true;
 }
 
+export async function deletePersonaRow(db: DbLike | undefined, id: string): Promise<boolean> {
+	const existing = await getPersonaRow(db, id);
+	if (!existing) return false;
+
+	if (!db) {
+		memoryStore.delete(id);
+		return true;
+	}
+
+	await db.prepare(`DELETE FROM preview_personas WHERE id = ?`).bind(id).run();
+	return true;
+}
+
 export function clearPreviewPersonasMemoryStore(): void {
 	memoryStore.clear();
 }

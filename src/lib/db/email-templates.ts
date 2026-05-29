@@ -10,6 +10,7 @@ type DbLike = Pick<D1Database, 'prepare' | 'batch'>;
 
 export interface EmailTemplateRow {
 	id: string;
+	familyId: string;
 	name: string;
 	version: string;
 	cfModel: string;
@@ -27,6 +28,7 @@ const memoryStore = new Map<string, EmailTemplateRow>();
 function rowFromDb(record: Record<string, unknown>): EmailTemplateRow {
 	return {
 		id: String(record.id),
+		familyId: String(record.family_id ?? record.id),
 		name: String(record.name),
 		version: String(record.version),
 		cfModel: String(record.cf_model),
@@ -78,11 +80,11 @@ export async function listEmailTemplateRows(db: DbLike | undefined): Promise<Ema
 
 	const result = await db
 		.prepare(
-			`SELECT id, name, version, cf_model, definition_json, mjml,
+			`SELECT id, family_id, name, version, cf_model, definition_json, mjml,
 				component_definition_json, component_models_json, is_builtin,
 				created_at, updated_at
 			FROM email_templates
-			ORDER BY name ASC`
+			ORDER BY name ASC, version DESC`
 		)
 		.all<Record<string, unknown>>();
 
@@ -97,7 +99,7 @@ export async function getEmailTemplateRow(
 
 	const row = await db
 		.prepare(
-			`SELECT id, name, version, cf_model, definition_json, mjml,
+			`SELECT id, family_id, name, version, cf_model, definition_json, mjml,
 				component_definition_json, component_models_json, is_builtin,
 				created_at, updated_at
 			FROM email_templates
@@ -109,8 +111,34 @@ export async function getEmailTemplateRow(
 	return row ? rowFromDb(row) : null;
 }
 
+export async function listEmailTemplateRowsByFamily(
+	db: DbLike | undefined,
+	familyId: string
+): Promise<EmailTemplateRow[]> {
+	if (!db) {
+		return [...memoryStore.values()]
+			.filter((row) => row.familyId === familyId)
+			.sort((a, b) => b.version.localeCompare(a.version, undefined, { numeric: true }));
+	}
+
+	const result = await db
+		.prepare(
+			`SELECT id, family_id, name, version, cf_model, definition_json, mjml,
+				component_definition_json, component_models_json, is_builtin,
+				created_at, updated_at
+			FROM email_templates
+			WHERE family_id = ?
+			ORDER BY version DESC`
+		)
+		.bind(familyId)
+		.all<Record<string, unknown>>();
+
+	return (result.results ?? []).map(rowFromDb);
+}
+
 export interface InsertEmailTemplateInput {
 	id: string;
+	familyId?: string;
 	name: string;
 	version: string;
 	cfModel: string;
@@ -128,6 +156,7 @@ export async function insertEmailTemplate(
 	const now = new Date().toISOString();
 	const row: EmailTemplateRow = {
 		id: input.id,
+		familyId: input.familyId ?? input.id,
 		name: input.name,
 		version: input.version,
 		cfModel: input.cfModel,
@@ -150,13 +179,14 @@ export async function insertEmailTemplate(
 	await db
 		.prepare(
 			`INSERT INTO email_templates (
-				id, name, version, cf_model, definition_json, mjml,
+				id, family_id, name, version, cf_model, definition_json, mjml,
 				component_definition_json, component_models_json, is_builtin,
 				created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 		)
 		.bind(
 			row.id,
+			row.familyId,
 			row.name,
 			row.version,
 			row.cfModel,
@@ -180,6 +210,7 @@ export interface UpdateEmailTemplateInput {
 	name?: string;
 	version?: string;
 	cfModel?: string;
+	familyId?: string;
 }
 
 export async function updateEmailTemplate(
@@ -194,6 +225,7 @@ export async function updateEmailTemplate(
 		...existing,
 		name: input.name ?? existing.name,
 		version: input.version ?? existing.version,
+		familyId: input.familyId ?? existing.familyId,
 		cfModel: input.cfModel ?? existing.cfModel,
 		definitionJson: input.definition ? JSON.stringify(input.definition) : existing.definitionJson,
 		mjml: input.mjml ?? existing.mjml,
@@ -221,6 +253,7 @@ export async function updateEmailTemplate(
 		.prepare(
 			`UPDATE email_templates SET
 				name = ?,
+				family_id = ?,
 				version = ?,
 				cf_model = ?,
 				definition_json = ?,
@@ -232,6 +265,7 @@ export async function updateEmailTemplate(
 		)
 		.bind(
 			next.name,
+			next.familyId,
 			next.version,
 			next.cfModel,
 			next.definitionJson,
@@ -244,6 +278,15 @@ export async function updateEmailTemplate(
 		.run();
 
 	return true;
+}
+
+export async function deleteEmailTemplate(db: DbLike | undefined, id: string): Promise<boolean> {
+	if (!db) {
+		return memoryStore.delete(id);
+	}
+
+	const result = await db.prepare('DELETE FROM email_templates WHERE id = ?').bind(id).run();
+	return (result.meta.changes ?? 0) > 0;
 }
 
 export function clearEmailTemplatesMemoryStore(): void {

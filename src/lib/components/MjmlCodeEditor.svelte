@@ -185,4 +185,27 @@
 	.mjml-cm-host :global(.cm-gutters) {
 		display: none;
 	}
+
+	.mjml-cm-host :global(.cm-scroller) {
+		scrollbar-width: thin;
+		scrollbar-color: rgba(0, 0, 0, 0.14) transparent;
+	}
+
+	.mjml-cm-host :global(.cm-scroller::-webkit-scrollbar) {
+		width: 5px;
+		height: 5px;
+	}
+
+	.mjml-cm-host :global(.cm-scroller::-webkit-scrollbar-track) {
+		background: transparent;
+	}
+
+	.mjml-cm-host :global(.cm-scroller::-webkit-scrollbar-thumb) {
+		background: rgba(0, 0, 0, 0.12);
+		border-radius: 999px;
+	}
+
+	.mjml-cm-host :global(.cm-scroller::-webkit-scrollbar-thumb:hover) {
+		background: rgba(0, 0, 0, 0.22);
+	}
 </style>

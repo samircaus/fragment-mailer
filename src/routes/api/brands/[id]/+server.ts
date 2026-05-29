@@ -1,9 +1,10 @@
 // GET /api/brands/:id — get brand
 // PUT /api/brands/:id — update brand
+// DELETE /api/brands/:id — delete brand
 
 import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { getBrandById, updateBrand } from '$lib/brands/service.js';
+import { deleteBrand, getBrandById, updateBrand } from '$lib/brands/service.js';
 
 export const GET: RequestHandler = async ({ params, platform }) => {
 	const brand = await getBrandById(platform, params.id);
@@ -23,4 +24,10 @@ export const PUT: RequestHandler = async ({ params, request, platform }) => {
 	if (!result.ok) throw error(400, result.error);
 
 	return json({ brand: result.brand });
+};
+
+export const DELETE: RequestHandler = async ({ params, platform }) => {
+	const result = await deleteBrand(platform, params.id);
+	if (!result.ok) throw error(400, result.error);
+	return json({ ok: true });
 };

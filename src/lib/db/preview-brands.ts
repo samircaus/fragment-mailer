@@ -135,6 +135,19 @@ export async function updateBrandRow(db: DbLike | undefined, brand: Brand): Prom
 	return true;
 }
 
+export async function deleteBrandRow(db: DbLike | undefined, id: string): Promise<boolean> {
+	const existing = await getBrandRow(db, id);
+	if (!existing) return false;
+
+	if (!db) {
+		memoryStore.delete(id);
+		return true;
+	}
+
+	await db.prepare(`DELETE FROM preview_brands WHERE id = ?`).bind(id).run();
+	return true;
+}
+
 export function clearPreviewBrandsMemoryStore(): void {
 	memoryStore.clear();
 }
