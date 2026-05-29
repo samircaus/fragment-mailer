@@ -139,7 +139,7 @@ async function runAjoExport(
 			{
 				ok: false,
 				message:
-					'AJO credentials not configured. Set AJO_IMS_CLIENT_ID and AJO_IMS_CLIENT_SECRET, or use GET without push for HTML copy.',
+					'AJO credentials not configured. Set AJO_IMS_CLIENT_ID and AJO_IMS_CLIENT_SECRET (or reuse IMS_CLIENT_ID / IMS_CLIENT_SECRET), or use GET without push for HTML copy.',
 				html: transform.html,
 				repoId: transform.repoId
 			},
@@ -171,6 +171,19 @@ async function runAjoExport(
 			: new Date().toISOString();
 
 	if (pushResult.error) {
+		console.error(
+			JSON.stringify({
+				event: 'ajo_export_push_failed',
+				timestamp: new Date().toISOString(),
+				campaignId,
+				cfUuid: campaign.cfUuid,
+				scope,
+				templateName: name,
+				existingRemoteTemplateId: existingId,
+				message: pushResult.error,
+				...(pushResult.failure ?? {})
+			})
+		);
 		if (campaign.cfUuid) {
 			await recordPushFailure(db, {
 				cfUuid: campaign.cfUuid,
@@ -186,6 +199,7 @@ async function runAjoExport(
 			{
 				ok: false,
 				message: pushResult.error,
+				failure: pushResult.failure,
 				html: transform.html,
 				repoId: transform.repoId
 			},

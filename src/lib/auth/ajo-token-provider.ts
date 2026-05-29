@@ -1,6 +1,7 @@
 // Cached IMS access token for AJO Platform API (separate OAuth app from AEM).
 
 import type { AppEnv } from '$lib/aem/env.js';
+import { ajoImsClientId, ajoImsClientSecret } from '$lib/aem/env.js';
 import { fetchServiceToken, isTokenExpired, type IMSToken } from './ims.js';
 
 let cached: IMSToken | null = null;
@@ -14,8 +15,8 @@ export interface AjoCredentials {
 }
 
 export function ajoCredentialsFromEnv(env?: AppEnv): AjoCredentials | null {
-	const clientId = env?.AJO_IMS_CLIENT_ID?.trim();
-	const clientSecret = env?.AJO_IMS_CLIENT_SECRET?.trim();
+	const clientId = ajoImsClientId(env);
+	const clientSecret = ajoImsClientSecret(env);
 	const imsOrg = env?.IMS_ORG_ID?.trim();
 	if (!clientId || !clientSecret || !imsOrg) return null;
 	return {
@@ -35,7 +36,7 @@ export async function getAjoAccessToken(env?: AppEnv): Promise<string> {
 	const creds = ajoCredentialsFromEnv(env);
 	if (!creds) {
 		throw new Error(
-			'AJO credentials missing. Set AJO_IMS_CLIENT_ID, AJO_IMS_CLIENT_SECRET, and IMS_ORG_ID.'
+			'AJO credentials missing. Set AJO_IMS_CLIENT_ID and AJO_IMS_CLIENT_SECRET (or reuse IMS_CLIENT_ID / IMS_CLIENT_SECRET), and IMS_ORG_ID.'
 		);
 	}
 

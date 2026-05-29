@@ -122,3 +122,12 @@ export function publishHostRepoId(env?: AppEnv): string {
 export function ajoSandboxName(env?: AppEnv): string {
 	return env?.AJO_SANDBOX_NAME?.trim() || env?.AJO_SANDBOX?.trim() || 'prod';
 }
+
+/** AJO Platform API key — dedicated AJO_IMS_* or same S2S app as AEM Author. */
+export function ajoImsClientId(env?: AppEnv): string | undefined {
+	return env?.AJO_IMS_CLIENT_ID?.trim() || env?.IMS_CLIENT_ID?.trim() || undefined;
+}
+
+export function ajoImsClientSecret(env?: AppEnv): string | undefined {
+	return env?.AJO_IMS_CLIENT_SECRET?.trim() || env?.IMS_CLIENT_SECRET?.trim() || undefined;
+}

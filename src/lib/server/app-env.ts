@@ -23,7 +23,14 @@ export function resolveAppEnv(platform?: AppEnv): AppEnv | undefined {
 		IMS_CLIENT_SECRET: pick('IMS_CLIENT_SECRET', platform),
 		IMS_ORG_ID: pick('IMS_ORG_ID', platform),
 		IMS_HOST: pick('IMS_HOST', platform),
-		IMS_SCOPES: pick('IMS_SCOPES', platform)
+		IMS_SCOPES: pick('IMS_SCOPES', platform),
+		AEM_AUTHOR_HOST: pick('AEM_AUTHOR_HOST', platform),
+		AEM_PUBLISH_HOST: pick('AEM_PUBLISH_HOST', platform),
+		AEM_CF_EDITOR_TENANT: pick('AEM_CF_EDITOR_TENANT', platform),
+		AJO_SANDBOX: pick('AJO_SANDBOX', platform),
+		AJO_SANDBOX_NAME: pick('AJO_SANDBOX_NAME', platform),
+		AJO_IMS_CLIENT_ID: pick('AJO_IMS_CLIENT_ID', platform),
+		AJO_IMS_CLIENT_SECRET: pick('AJO_IMS_CLIENT_SECRET', platform)
 	};
 
 	const hasValue = Object.values(merged).some((v) => v !== undefined && v !== '');

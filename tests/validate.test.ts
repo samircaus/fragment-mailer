@@ -42,21 +42,13 @@ describe('validateCFFields — Rule 1: escaped HTML as text', () => {
 	});
 });
 
-describe('validateCFFields — Rule 5: raw HTML in plain-text field', () => {
-	it('flags a plain-text field with raw HTML markup', () => {
+describe('validateCFFields — raw HTML in plain-text field', () => {
+	it('does not flag a plain-text field with raw HTML (intentionally allowed)', () => {
 		const { warnings } = validateCFFields(
 			{ heroHeadline: '<strong>Big Sale</strong>' },
 			{ heroHeadline: 'text' }
 		);
-		expect(warnings.some((w) => w.severity === 'warning')).toBe(true);
-	});
-
-	it('does not flag raw HTML in a richtext field', () => {
-		const { warnings } = validateCFFields(
-			{ bodyCopy: '<p>Hello</p>' },
-			{ bodyCopy: 'richtext' }
-		);
-		expect(warnings.filter((w) => w.fieldPath === 'cf.bodyCopy' && w.severity === 'warning')).toHaveLength(0);
+		expect(warnings).toHaveLength(0);
 	});
 });
 

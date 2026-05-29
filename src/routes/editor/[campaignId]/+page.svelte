@@ -2,15 +2,15 @@
 	import { page } from '$app/stores';
 	import { onMount, tick } from 'svelte';
 	import { cfExperienceCloudEditorUrl, universalEditorCanvasUrl } from '$lib/aem/author-links.js';
-	import {
-		type Persona,
-		personaSubtitle
-	} from '$lib/personas/samples.js';
+	import { type Persona } from '$lib/personas/samples.js';
 	import { validatePersonaData } from '$lib/personas/validate.js';
-	import { validateBrandData, brandSubtitle } from '$lib/brands/validate.js';
+	import { validateBrandData } from '$lib/brands/validate.js';
 	import type { Brand } from '$lib/personas/types.js';
 	import { displayStatusHint, displayStatusLabel } from '$lib/db/attach-email-status.js';
 	import type { EmailStatusInfo } from '$lib/db/email-status-types.js';
+	import MjmlCodeEditor from '$lib/components/MjmlCodeEditor.svelte';
+	import type { AjoRequestFailure } from '$lib/ajo/client.js';
+	import { formatAjoPushError } from '$lib/ajo/format-push-error.js';
 
 	// ─── Types ──────────────────────────────────────────────────────────────────
 	interface Campaign {
@@ -56,14 +56,12 @@
 
 	// Persona picker
 	let personas = $state<Persona[]>([]);
-	let personaPickerOpen = $state(false);
 	let personaEditOpen = $state(false);
 	let personaEditJson = $state('');
 	let personaEditError = $state('');
 	let personaEditSaving = $state(false);
 	let brands = $state<Brand[]>([]);
 	let selectedBrandId = $state('acme-corp');
-	let brandPickerOpen = $state(false);
 	let brandEditOpen = $state(false);
 	let brandEditJson = $state('');
 	let brandEditError = $state('');
@@ -99,16 +97,28 @@
 	let addMenuNode = $state<{ node: FlatNode; x: number; y: number } | null>(null);
 
 	// Preview
+	const PREVIEW_VIEWPORT_KEY = 'editor-preview-viewport';
+	const PREVIEW_CHROME_KEY = 'editor-preview-chrome';
+	const PREVIEW_DESKTOP_WIDTH = 600;
+	const PREVIEW_MOBILE_WIDTH = 375;
+
 	let selectedPersonaId = $state('persona-1');
+	let previewViewport = $state<'desktop' | 'mobile'>('desktop');
+	let previewChrome = $state<'light' | 'dark'>('light');
+	let previewWarnings = $state<string[]>([]);
+	let previewWarningsExpanded = $state(false);
 	let iframeKey = $state(0);
 	let iframeEl = $state<HTMLIFrameElement | null>(null);
 	let ajoPushStatus = $state<'idle' | 'exporting' | 'done' | 'error'>('idle');
 	let ajoHtmlDownloadStatus = $state<'idle' | 'exporting' | 'done' | 'error'>('idle');
 	let ajoHtmlCopyStatus = $state<'idle' | 'exporting' | 'done' | 'error'>('idle');
 	let ajoActionMessage = $state('');
+	let ajoErrorDialogOpen = $state(false);
+	let ajoErrorDialogText = $state('');
+	let ajoErrorCopyStatus = $state<'idle' | 'done'>('idle');
 
 	// Textarea ref (for Tab/cursor handling)
-	let textareaEl = $state<HTMLTextAreaElement | null>(null);
+	let mjmlEditor = $state<MjmlCodeEditor | null>(null);
 
 	// ─── Constants ──────────────────────────────────────────────────────────────
 	const CHILD_COMPONENTS: Record<string, { tag: string; label: string; snippet: string }[]> = {
@@ -171,6 +181,15 @@
 			if (!Number.isNaN(parsed)) {
 				leftPanelWidth = Math.min(LEFT_PANEL_MAX, Math.max(LEFT_PANEL_MIN, parsed));
 			}
+		}
+
+		const storedViewport = localStorage.getItem(PREVIEW_VIEWPORT_KEY);
+		if (storedViewport === 'desktop' || storedViewport === 'mobile') {
+			previewViewport = storedViewport;
+		}
+		const storedChrome = localStorage.getItem(PREVIEW_CHROME_KEY);
+		if (storedChrome === 'light' || storedChrome === 'dark') {
+			previewChrome = storedChrome;
 		}
 
 		await Promise.all([loadCampaign(), loadTemplates(), loadPreviewContext()]);
@@ -398,22 +417,6 @@
 		}
 	}
 
-	async function handleTextareaKeydown(e: KeyboardEvent) {
-		if (e.key === 'Tab') {
-			e.preventDefault();
-			const el = e.currentTarget as HTMLTextAreaElement;
-			const start = el.selectionStart;
-			const end = el.selectionEnd;
-			mjmlCode = mjmlCode.slice(0, start) + '  ' + mjmlCode.slice(end);
-			isDirty = true;
-			await tick();
-			el.setSelectionRange(start + 2, start + 2);
-		} else if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-			e.preventDefault();
-			await handleSave();
-		}
-	}
-
 	function remoteTemplateId(): string | undefined {
 		return campaign?.emailStatus?.remoteTemplateId;
 	}
@@ -483,10 +486,31 @@
 		}
 	}
 
+	function openAjoErrorDialog(text: string) {
+		ajoErrorDialogText = text;
+		ajoErrorDialogOpen = true;
+	}
+
+	function closeAjoErrorDialog() {
+		ajoErrorDialogOpen = false;
+		ajoErrorCopyStatus = 'idle';
+	}
+
+	async function copyAjoErrorDialog() {
+		try {
+			await navigator.clipboard.writeText(ajoErrorDialogText);
+			ajoErrorCopyStatus = 'done';
+			setTimeout(() => (ajoErrorCopyStatus = 'idle'), 2000);
+		} catch {
+			// ignore — user can still select from textarea
+		}
+	}
+
 	async function handleAjoPush() {
 		if (!campaignId) return;
 		ajoPushStatus = 'exporting';
 		ajoActionMessage = '';
+		ajoErrorDialogOpen = false;
 		try {
 			const ajoTemplateId = remoteTemplateId();
 			const res = await fetch(`/api/export/ajo?campaignId=${encodeURIComponent(campaignId)}`, {
@@ -503,13 +527,24 @@
 				ok?: boolean;
 				templateId?: string;
 				message?: string;
+				failure?: AjoRequestFailure;
 				validationErrors?: Array<{ message: string }>;
 			};
 			if (!res.ok || !data.ok) {
-				const details = Array.isArray(data.validationErrors)
-					? data.validationErrors.map((e) => e.message).join('; ')
-					: (data.message ?? `Push failed: ${res.status}`);
-				throw new Error(details);
+				const fullError = formatAjoPushError({
+					message: data.message ?? `Push failed: ${res.status}`,
+					failure: data.failure,
+					validationErrors: data.validationErrors
+				});
+				openAjoErrorDialog(fullError);
+				ajoActionMessage =
+					data.message ??
+					(Array.isArray(data.validationErrors)
+						? data.validationErrors.map((e) => e.message).join('; ')
+						: `Push failed: ${res.status}`);
+				ajoPushStatus = 'error';
+				setTimeout(() => (ajoPushStatus = 'idle'), 5000);
+				return;
 			}
 			if (data.templateId && campaign) {
 				campaign = {
@@ -522,11 +557,13 @@
 					}
 				};
 			}
-			ajoActionMessage = data.templateId ? `Template ${data.templateId}` : 'Pushed';
+			ajoActionMessage = data.templateId ? `Template ${data.templateId}` : 'Sent';
 			ajoPushStatus = 'done';
 			setTimeout(() => (ajoPushStatus = 'idle'), 4000);
 		} catch (e) {
-			ajoActionMessage = e instanceof Error ? e.message : 'Push failed';
+			const msg = e instanceof Error ? e.message : 'Push failed';
+			openAjoErrorDialog(msg);
+			ajoActionMessage = msg;
 			ajoPushStatus = 'error';
 			setTimeout(() => (ajoPushStatus = 'idle'), 5000);
 		}
@@ -537,6 +574,55 @@
 		const body = iframeEl.contentDocument.body;
 		if (!body) return;
 		iframeEl.style.height = body.scrollHeight + 'px';
+	}
+
+	function extractPreviewWarnings() {
+		const doc = iframeEl?.contentDocument;
+		if (!doc) {
+			previewWarnings = [];
+			return;
+		}
+		const found: string[] = [];
+		const walker = doc.createTreeWalker(doc, NodeFilter.SHOW_COMMENT);
+		let node = walker.nextNode();
+		while (node) {
+			const text = node.textContent ?? '';
+			const marker = 'FRAGMENT_MAILER_WARNING:';
+			const idx = text.indexOf(marker);
+			if (idx >= 0) {
+				found.push(text.slice(idx + marker.length).trim());
+			}
+			node = walker.nextNode();
+		}
+		previewWarnings = found;
+		if (found.length === 0) {
+			previewWarningsExpanded = false;
+		}
+	}
+
+	function onPreviewIframeLoad() {
+		fitIframe();
+		extractPreviewWarnings();
+	}
+
+	function personaChipLabel(persona: Persona): string {
+		const paren = persona.label.match(/\(([^)]+)\)/);
+		if (paren?.[1]) return paren[1];
+		const first = persona.person?.name?.firstName;
+		if (first) return first;
+		return persona.label.split(/\s+/)[0] ?? persona.label;
+	}
+
+	function setPreviewViewport(viewport: 'desktop' | 'mobile') {
+		previewViewport = viewport;
+		localStorage.setItem(PREVIEW_VIEWPORT_KEY, viewport);
+	}
+
+	function setPreviewChrome(chrome: 'light' | 'dark') {
+		if (previewChrome === chrome) return;
+		previewChrome = chrome;
+		localStorage.setItem(PREVIEW_CHROME_KEY, chrome);
+		iframeKey += 1;
 	}
 
 	// ─── Structure tree ───────────────────────────────────────────────────────────
@@ -638,14 +724,7 @@
 	}
 
 	async function focusEditorAt(position: number) {
-		await tick();
-		const el = textareaEl;
-		if (!el) return;
-		el.focus();
-		el.setSelectionRange(position, position);
-		const lineNumber = mjmlCode.slice(0, position).split('\n').length - 1;
-		const lineHeight = Number.parseInt(getComputedStyle(el).lineHeight, 10) || 20;
-		el.scrollTop = Math.max(0, lineNumber * lineHeight - el.clientHeight / 2);
+		await mjmlEditor?.focusAt(position);
 	}
 
 	function insertChildComponent(node: FlatNode, snippet: string) {
@@ -710,21 +789,20 @@
 	}
 
 	function selectPersona(id: string) {
+		if (selectedPersonaId === id) return;
 		selectedPersonaId = id;
-		personaPickerOpen = false;
 		iframeKey += 1;
 	}
 
 	function selectBrand(id: string) {
+		if (selectedBrandId === id) return;
 		selectedBrandId = id;
-		brandPickerOpen = false;
 		iframeKey += 1;
 	}
 
 	function openBrandEdit() {
 		const brand = selectedBrand;
 		if (!brand) return;
-		brandPickerOpen = false;
 		brandEditError = '';
 		const { id: _id, ...editable } = brand;
 		brandEditJson = JSON.stringify(editable, null, 2);
@@ -781,7 +859,6 @@
 	function openPersonaEdit() {
 		const persona = personas.find((p) => p.id === selectedPersonaId);
 		if (!persona) return;
-		personaPickerOpen = false;
 		personaEditError = '';
 		const { id: _id, ...editable } = persona;
 		personaEditJson = JSON.stringify(editable, null, 2);
@@ -854,17 +931,23 @@
 	const ajoSyncStatus = $derived(campaign?.status ?? campaign?.emailStatus?.syncStatus ?? 'never_pushed');
 
 	const pushButtonLabel = $derived.by(() => {
-		if (ajoPushStatus === 'exporting') return 'Pushing…';
-		if (ajoPushStatus === 'done') return 'Pushed ✓';
-		if (ajoPushStatus === 'error') return 'Push failed';
+		if (ajoPushStatus === 'exporting') return 'Sending…';
+		if (ajoPushStatus === 'done') return 'Sent ✓';
+		if (ajoPushStatus === 'error') return 'Send failed';
 		switch (ajoSyncStatus) {
 			case 'stale':
 				return 'Update AJO';
 			case 'synced':
-				return 'Re-push';
+				return 'Send again';
 			default:
-				return 'Push to AJO';
+				return 'Send to AJO';
 		}
+	});
+
+	// Clear warnings while the preview iframe reloads
+	$effect(() => {
+		void iframeKey;
+		previewWarnings = [];
 	});
 
 	const previewUrl = $derived.by(() => {
@@ -872,6 +955,7 @@
 			templateId: selectedTemplateId || 'promo',
 			personaId: selectedPersonaId,
 			brandId: selectedBrandId,
+			colorScheme: previewChrome,
 			t: String(iframeKey)
 		});
 		if (selectedPersona) {
@@ -888,8 +972,6 @@
 		if (target instanceof Element && target.closest('.add-menu, .add-child-btn')) return;
 		addMenuNode = null;
 		templatePickerOpen = false;
-		personaPickerOpen = false;
-		brandPickerOpen = false;
 	}}
 	onkeydown={(e) => {
 		if (e.key === 'Escape' && personaEditOpen) {
@@ -964,28 +1046,10 @@
 		{/if}
 		<div class="topbar-spacer"></div>
 		<div class="ajo-group">
-			<span
-				class="sync-chip sync-{ajoSyncStatus.replace('_', '-')}"
-				title={displayStatusHint(ajoSyncStatus)}
-			>
-				<span class="sync-dot" aria-hidden="true"></span>
-				{displayStatusLabel(ajoSyncStatus)}
-			</span>
-			<div class="ajo-actions">
-				<button
-					class="export-btn"
-					class:loading={ajoPushStatus === 'exporting'}
-					class:done={ajoPushStatus === 'done'}
-					class:error={ajoPushStatus === 'error'}
-					onclick={handleAjoPush}
-					disabled={ajoPushStatus === 'exporting' || ajoHtmlBusy}
-					title="Push to AJO Content Templates API"
-				>
-					{pushButtonLabel}
-				</button>
+			<div class="ajo-html-actions">
 				<button
 					type="button"
-					class="export-btn secondary ajo-icon-btn"
+					class="ajo-html-btn"
 					class:loading={ajoHtmlDownloadStatus === 'exporting'}
 					class:done={ajoHtmlDownloadStatus === 'done'}
 					class:error={ajoHtmlDownloadStatus === 'error'}
@@ -995,7 +1059,7 @@
 					aria-label="Download AJO HTML"
 				>
 					{#if ajoHtmlDownloadStatus === 'done'}
-						<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+						<svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden="true">
 							<path
 								d="M2.5 7.25 5.5 10.25 11.5 3.75"
 								stroke="currentColor"
@@ -1005,7 +1069,7 @@
 							/>
 						</svg>
 					{:else}
-						<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+						<svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden="true">
 							<path
 								d="M7 2.5v6.5M4.5 7.5 7 10l2.5-2.5M3 11.5h8"
 								stroke="currentColor"
@@ -1018,7 +1082,7 @@
 				</button>
 				<button
 					type="button"
-					class="export-btn secondary ajo-icon-btn ajo-icon-btn-last"
+					class="ajo-html-btn"
 					class:loading={ajoHtmlCopyStatus === 'exporting'}
 					class:done={ajoHtmlCopyStatus === 'done'}
 					class:error={ajoHtmlCopyStatus === 'error'}
@@ -1028,7 +1092,7 @@
 					aria-label="Copy AJO HTML"
 				>
 					{#if ajoHtmlCopyStatus === 'done'}
-						<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+						<svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden="true">
 							<path
 								d="M2.5 7.25 5.5 10.25 11.5 3.75"
 								stroke="currentColor"
@@ -1038,7 +1102,7 @@
 							/>
 						</svg>
 					{:else}
-						<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+						<svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden="true">
 							<rect
 								x="4.5"
 								y="4.5"
@@ -1058,16 +1122,47 @@
 					{/if}
 				</button>
 			</div>
+			<div class="ajo-push-group">
+				<span
+					class="sync-chip sync-{ajoSyncStatus.replace('_', '-')}"
+					title={displayStatusHint(ajoSyncStatus)}
+				>
+					<span class="sync-dot" aria-hidden="true"></span>
+					{displayStatusLabel(ajoSyncStatus)}
+				</span>
+				<button
+					class="export-btn"
+					class:loading={ajoPushStatus === 'exporting'}
+					class:done={ajoPushStatus === 'done'}
+					class:error={ajoPushStatus === 'error'}
+					onclick={handleAjoPush}
+					disabled={ajoPushStatus === 'exporting' || ajoHtmlBusy}
+					title="Send to AJO Content Templates API"
+				>
+					{pushButtonLabel}
+				</button>
+			</div>
 		</div>
 		{#if ajoActionMessage && (ajoPushStatus === 'error' || ajoHtmlDownloadStatus === 'error' || ajoHtmlCopyStatus === 'error')}
-			<span class="export-error-hint" title={ajoActionMessage}>{ajoActionMessage}</span>
+			{#if ajoPushStatus === 'error' && ajoErrorDialogText}
+				<button
+					type="button"
+					class="export-error-hint"
+					title="View full error"
+					onclick={() => (ajoErrorDialogOpen = true)}
+				>
+					{ajoActionMessage} — details
+				</button>
+			{:else}
+				<span class="export-error-hint" title={ajoActionMessage}>{ajoActionMessage}</span>
+			{/if}
 		{/if}
 	</header>
 
 	<div class="panels" class:resizing={isResizingPanel}>
 		<!-- ─── Left panel ──────────────────────────────────────────────────── -->
 		<aside class="left-panel" style:width={`${leftPanelWidth}px`}>
-			<!-- Template & persona pickers -->
+			<!-- Template picker -->
 			<div class="picker-bar">
 				<div class="picker-section">
 					<div class="picker-label">Template</div>
@@ -1082,8 +1177,6 @@
 								disabled={templates.length === 0}
 								onclick={(e) => {
 									e.stopPropagation();
-									personaPickerOpen = false;
-									brandPickerOpen = false;
 									templatePickerOpen = !templatePickerOpen;
 								}}
 								onkeydown={(e) =>
@@ -1174,210 +1267,6 @@
 						</button>
 					</div>
 				</div>
-
-				<div class="picker-section">
-					<div class="picker-label">Persona</div>
-					<div class="picker-controls">
-						<div class="dropdown" class:open={personaPickerOpen}>
-							<button
-								type="button"
-								class="dropdown-trigger"
-								class:placeholder={!selectedPersona}
-								aria-haspopup="listbox"
-								aria-expanded={personaPickerOpen}
-								disabled={personas.length === 0}
-								onclick={(e) => {
-									e.stopPropagation();
-									templatePickerOpen = false;
-									brandPickerOpen = false;
-									personaPickerOpen = !personaPickerOpen;
-								}}
-								onkeydown={(e) =>
-									handleDropdownKeydown(e, personaPickerOpen, (open) => (personaPickerOpen = open))}
-							>
-								<span class="dropdown-value">
-									{#if selectedPersona}
-										<span class="dropdown-primary">{selectedPersona.label}</span>
-										<span class="dropdown-meta">{personaSubtitle(selectedPersona)}</span>
-									{:else}
-										<span class="dropdown-primary">Select persona…</span>
-									{/if}
-								</span>
-								<svg
-									class="dropdown-chevron"
-									width="14"
-									height="14"
-									viewBox="0 0 14 14"
-									fill="none"
-									aria-hidden="true"
-								>
-									<path
-										d="M3.5 5.25 7 8.75l3.5-3.5"
-										stroke="currentColor"
-										stroke-width="1.5"
-										stroke-linecap="round"
-										stroke-linejoin="round"
-									/>
-								</svg>
-							</button>
-
-							{#if personaPickerOpen && personas.length > 0}
-								<ul
-									class="dropdown-menu"
-									role="listbox"
-									onclick={stopEventPropagation}
-									onkeydown={stopEventPropagation}
-								>
-									{#each personas as p (p.id)}
-										<li role="none">
-											<button
-												type="button"
-												class="dropdown-option"
-												class:selected={selectedPersonaId === p.id}
-												role="option"
-												aria-selected={selectedPersonaId === p.id}
-												onclick={() => selectPersona(p.id)}
-											>
-												<span class="dropdown-option-body">
-													<span class="dropdown-option-primary">{p.label}</span>
-													<span class="dropdown-option-secondary">{personaSubtitle(p)}</span>
-												</span>
-												{#if selectedPersonaId === p.id}
-													<svg
-														class="dropdown-option-check"
-														width="14"
-														height="14"
-														viewBox="0 0 14 14"
-														fill="none"
-														aria-hidden="true"
-													>
-														<path
-															d="M2.5 7.25 5.5 10.25 11.5 3.75"
-															stroke="currentColor"
-															stroke-width="1.5"
-															stroke-linecap="round"
-															stroke-linejoin="round"
-														/>
-													</svg>
-												{/if}
-											</button>
-										</li>
-									{/each}
-								</ul>
-							{/if}
-						</div>
-						<button
-							class="picker-action-btn"
-							onclick={openPersonaEdit}
-							disabled={!selectedPersona}
-							title="Edit persona profile JSON"
-						>
-							Edit
-						</button>
-					</div>
-				</div>
-
-				<div class="picker-section">
-					<div class="picker-label">Brand</div>
-					<div class="picker-controls">
-						<div class="dropdown brand-dropdown" class:open={brandPickerOpen}>
-							<button
-								type="button"
-								class="dropdown-trigger"
-								class:placeholder={!selectedBrand}
-								aria-haspopup="listbox"
-								aria-expanded={brandPickerOpen}
-								disabled={brands.length === 0}
-								onclick={(e) => {
-									e.stopPropagation();
-									templatePickerOpen = false;
-									personaPickerOpen = false;
-									brandPickerOpen = !brandPickerOpen;
-								}}
-								onkeydown={(e) =>
-									handleDropdownKeydown(e, brandPickerOpen, (open) => (brandPickerOpen = open))}
-							>
-								<span class="dropdown-value">
-									{#if selectedBrand}
-										<span class="dropdown-primary">{selectedBrand.label}</span>
-										<span class="dropdown-meta">{brandSubtitle(selectedBrand)}</span>
-									{:else}
-										<span class="dropdown-primary">Select brand…</span>
-									{/if}
-								</span>
-								<svg
-									class="dropdown-chevron"
-									width="14"
-									height="14"
-									viewBox="0 0 14 14"
-									fill="none"
-									aria-hidden="true"
-								>
-									<path
-										d="M3.5 5.25 7 8.75l3.5-3.5"
-										stroke="currentColor"
-										stroke-width="1.5"
-										stroke-linecap="round"
-										stroke-linejoin="round"
-									/>
-								</svg>
-							</button>
-
-							{#if brandPickerOpen && brands.length > 0}
-								<ul
-									class="dropdown-menu"
-									role="listbox"
-									onclick={stopEventPropagation}
-									onkeydown={stopEventPropagation}
-								>
-									{#each brands as brand (brand.id)}
-										<li role="none">
-											<button
-												type="button"
-												class="dropdown-option"
-												class:selected={selectedBrandId === brand.id}
-												role="option"
-												aria-selected={selectedBrandId === brand.id}
-												onclick={() => selectBrand(brand.id)}
-											>
-												<span class="dropdown-option-body">
-													<span class="dropdown-option-primary">{brand.label}</span>
-													<span class="dropdown-option-secondary">{brandSubtitle(brand)}</span>
-												</span>
-												{#if selectedBrandId === brand.id}
-													<svg
-														class="dropdown-option-check"
-														width="14"
-														height="14"
-														viewBox="0 0 14 14"
-														fill="none"
-														aria-hidden="true"
-													>
-														<path
-															d="M2.5 7.25 5.5 10.25 11.5 3.75"
-															stroke="currentColor"
-															stroke-width="1.5"
-															stroke-linecap="round"
-															stroke-linejoin="round"
-														/>
-													</svg>
-												{/if}
-											</button>
-										</li>
-									{/each}
-								</ul>
-							{/if}
-						</div>
-						<button
-							class="picker-action-btn"
-							onclick={openBrandEdit}
-							disabled={!selectedBrand}
-							title="Edit brand preview settings"
-						>
-							Edit
-						</button>
-					</div>
-				</div>
 			</div>
 
 			<!-- New template inline form -->
@@ -1415,13 +1304,32 @@
 
 			<!-- Tab bar -->
 			<div class="tab-bar">
-				<button class="tab" class:active={activeTab === 'code'} onclick={() => (activeTab = 'code')}>
-					Code
-				</button>
-				<button class="tab" class:active={activeTab === 'tree'} onclick={() => (activeTab = 'tree')}>
+				<div class="tab-group" class:active={activeTab === 'code'}>
+					<button type="button" class="tab tab-code" onclick={() => (activeTab = 'code')}>Code</button>
+					<a
+						href="https://documentation.mjml.io/#mjml-guide"
+						target="_blank"
+						rel="noopener noreferrer"
+						class="mjml-docs-link"
+						title="MJML documentation"
+						aria-label="MJML documentation"
+					>
+						<svg width="10" height="10" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+							<rect width="14" height="14" rx="3" fill="#f45e43" />
+							<path
+								d="M3.75 10V4.25L6.5 7.5 9.25 4.25V10"
+								stroke="#fff"
+								stroke-width="1.2"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+							/>
+						</svg>
+					</a>
+				</div>
+				<button type="button" class="tab" class:active={activeTab === 'tree'} onclick={() => (activeTab = 'tree')}>
 					Structure
 				</button>
-				<button class="tab" class:active={activeTab === 'html'} onclick={() => (activeTab = 'html')}>
+				<button type="button" class="tab" class:active={activeTab === 'html'} onclick={() => (activeTab = 'html')}>
 					HTML
 				</button>
 			</div>
@@ -1433,17 +1341,13 @@
 						{#if templateLoadError}
 							<div class="editor-error">{templateLoadError}</div>
 						{:else}
-							<textarea
-								bind:this={textareaEl}
+							<MjmlCodeEditor
+								bind:this={mjmlEditor}
 								class="mjml-editor"
 								bind:value={mjmlCode}
-								onkeydown={handleTextareaKeydown}
-								oninput={() => (isDirty = true)}
-								spellcheck={false}
-								autocomplete="off"
-								autocapitalize="off"
-								placeholder="<mjml>…</mjml>"
-							></textarea>
+								ondirty={() => (isDirty = true)}
+								onsave={handleSave}
+							/>
 						{/if}
 					</div>
 				{:else if activeTab === 'html'}
@@ -1514,6 +1418,7 @@
 						<span class="dirty-indicator" title="Unsaved changes">●</span>
 					{/if}
 					<button
+						type="button"
 						class="save-btn"
 						class:saving={saveStatus === 'saving'}
 						class:saved={saveStatus === 'saved'}
@@ -1524,7 +1429,7 @@
 						{#if saveStatus === 'saving'}Saving…
 						{:else if saveStatus === 'saved'}Saved ✓
 						{:else if saveStatus === 'error'}Save failed
-						{:else}Save & Preview{/if}
+						{:else}Save Template{/if}
 					</button>
 				</div>
 			</div>
@@ -1547,7 +1452,205 @@
 		></button>
 
 		<!-- ─── Preview ─────────────────────────────────────────────────────── -->
-		<main class="preview-area">
+		<main
+			class="preview-area"
+			class:preview-chrome-dark={previewChrome === 'dark'}
+			class:preview-viewport-mobile={previewViewport === 'mobile'}
+		>
+			{#if !isLoading}
+				<header class="preview-toolbar">
+					<div class="preview-toolbar-section">
+						<label class="preview-toolbar-label" for="preview-persona-select">Persona</label>
+						<select
+							id="preview-persona-select"
+							class="preview-toolbar-select"
+							value={selectedPersonaId}
+							disabled={personas.length === 0}
+							onchange={(e) => selectPersona(e.currentTarget.value)}
+						>
+							{#each personas as p (p.id)}
+								<option value={p.id} title={p.label}>{personaChipLabel(p)}</option>
+							{/each}
+						</select>
+						<button
+							type="button"
+							class="preview-icon-btn"
+							onclick={openPersonaEdit}
+							disabled={!selectedPersona}
+							title="Edit persona profile JSON"
+							aria-label="Edit persona"
+						>
+							<svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+								<path
+									d="M9.25 2.75 11.25 4.75 4.75 11.25H2.75V9.25l6.5-6.5z"
+									stroke="currentColor"
+									stroke-width="1.25"
+									stroke-linejoin="round"
+								/>
+							</svg>
+						</button>
+					</div>
+
+					<div class="preview-toolbar-divider" aria-hidden="true"></div>
+
+					<div class="preview-toolbar-section">
+						<label class="preview-toolbar-label" for="preview-brand-select">Brand</label>
+						<select
+							id="preview-brand-select"
+							class="preview-toolbar-select"
+							value={selectedBrandId}
+							disabled={brands.length === 0}
+							onchange={(e) => selectBrand(e.currentTarget.value)}
+						>
+							{#each brands as brand (brand.id)}
+								<option value={brand.id}>{brand.label}</option>
+							{/each}
+						</select>
+						<button
+							type="button"
+							class="preview-icon-btn"
+							onclick={openBrandEdit}
+							disabled={!selectedBrand}
+							title="Edit brand preview settings"
+							aria-label="Edit brand"
+						>
+							<svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+								<path
+									d="M9.25 2.75 11.25 4.75 4.75 11.25H2.75V9.25l6.5-6.5z"
+									stroke="currentColor"
+									stroke-width="1.25"
+									stroke-linejoin="round"
+								/>
+							</svg>
+						</button>
+					</div>
+
+					<div class="preview-toolbar-spacer"></div>
+
+					<div class="preview-toolbar-section preview-toolbar-controls">
+						<div class="preview-icon-toggle-group" role="group" aria-label="Preview viewport">
+							<button
+								type="button"
+								class="preview-icon-toggle"
+								class:pressed={previewViewport === 'desktop'}
+								aria-pressed={previewViewport === 'desktop'}
+								title="Desktop width (600px)"
+								onclick={() => setPreviewViewport('desktop')}
+							>
+								<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+									<rect
+										x="1.5"
+										y="3"
+										width="11"
+										height="8"
+										rx="1"
+										stroke="currentColor"
+										stroke-width="1.25"
+									/>
+								</svg>
+							</button>
+							<button
+								type="button"
+								class="preview-icon-toggle"
+								class:pressed={previewViewport === 'mobile'}
+								aria-pressed={previewViewport === 'mobile'}
+								title="Mobile width (375px)"
+								onclick={() => setPreviewViewport('mobile')}
+							>
+								<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+									<rect
+										x="4"
+										y="1.5"
+										width="6"
+										height="11"
+										rx="1"
+										stroke="currentColor"
+										stroke-width="1.25"
+									/>
+								</svg>
+							</button>
+						</div>
+
+						<div class="preview-icon-toggle-group" role="group" aria-label="Preview background">
+							<button
+								type="button"
+								class="preview-icon-toggle"
+								class:pressed={previewChrome === 'light'}
+								aria-pressed={previewChrome === 'light'}
+								title="Light mode — typical webmail + light prefers-color-scheme"
+								onclick={() => setPreviewChrome('light')}
+							>
+								<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+									<circle cx="7" cy="7" r="3" stroke="currentColor" stroke-width="1.25" />
+									<path
+										d="M7 1.5v1.25M7 11.25V12.5M1.5 7h1.25M11.25 7H12.5M3.4 3.4l.9.9M9.7 9.7l.9.9M10.6 3.4l-.9.9M4.3 9.7l-.9.9"
+										stroke="currentColor"
+										stroke-width="1.1"
+										stroke-linecap="round"
+									/>
+								</svg>
+							</button>
+							<button
+								type="button"
+								class="preview-icon-toggle"
+								class:pressed={previewChrome === 'dark'}
+								aria-pressed={previewChrome === 'dark'}
+								title="Dark mode — simulates prefers-color-scheme: dark in the email (not Outlook/Gmail-specific)"
+								onclick={() => setPreviewChrome('dark')}
+							>
+								<svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+									<path
+										d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"
+										stroke="currentColor"
+										stroke-width="2"
+										stroke-linecap="round"
+										stroke-linejoin="round"
+									/>
+								</svg>
+							</button>
+						</div>
+
+						{#if previewWarnings.length > 0}
+							<button
+								type="button"
+								class="preview-warnings-badge"
+								class:expanded={previewWarningsExpanded}
+								aria-expanded={previewWarningsExpanded}
+								title="Content validation issues"
+								onclick={() => (previewWarningsExpanded = !previewWarningsExpanded)}
+							>
+								<svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+									<path
+										d="M7 2.5 11.5 10.5H2.5L7 2.5z"
+										stroke="currentColor"
+										stroke-width="1.25"
+										stroke-linejoin="round"
+									/>
+									<path
+										d="M7 5.25v2.75M7 9.75h.01"
+										stroke="currentColor"
+										stroke-width="1.25"
+										stroke-linecap="round"
+									/>
+								</svg>
+								{previewWarnings.length}
+								{previewWarnings.length === 1 ? 'issue' : 'issues'}
+							</button>
+						{/if}
+					</div>
+				</header>
+
+				{#if previewWarningsExpanded && previewWarnings.length > 0}
+					<div class="preview-warnings-panel" role="region" aria-label="Validation warnings">
+						<ul class="preview-warnings-list">
+							{#each previewWarnings as warning, i (i)}
+								<li>{warning}</li>
+							{/each}
+						</ul>
+					</div>
+				{/if}
+			{/if}
+
 			{#if isLoading}
 				<div class="preview-loading">
 					<div class="loading-dot"></div>
@@ -1555,15 +1658,22 @@
 				</div>
 			{:else}
 				<div class="preview-stage">
-					<iframe
-						bind:this={iframeEl}
-						src={previewUrl}
-						title="Email preview"
-						allow="same-origin"
-						scrolling="no"
-						class="preview-iframe"
-						onload={fitIframe}
-					></iframe>
+					<div
+						class="preview-frame-shell"
+						style:width="{previewViewport === 'mobile'
+							? PREVIEW_MOBILE_WIDTH
+							: PREVIEW_DESKTOP_WIDTH}px"
+					>
+						<iframe
+							bind:this={iframeEl}
+							src={previewUrl}
+							title="Email preview"
+							allow="same-origin"
+							scrolling="no"
+							class="preview-iframe"
+							onload={onPreviewIframeLoad}
+						></iframe>
+					</div>
 				</div>
 			{/if}
 		</main>
@@ -1615,6 +1725,91 @@
 				<button type="button" class="btn-create" onclick={savePersonaEdit} disabled={personaEditSaving}>
 					{personaEditSaving ? 'Saving…' : 'Save & Preview'}
 				</button>
+			</footer>
+		</div>
+	</div>
+{/if}
+
+{#if ajoErrorDialogOpen}
+	<div class="persona-dialog-layer" role="presentation">
+		<button
+			type="button"
+			class="persona-dialog-backdrop"
+			aria-label="Close dialog"
+			onclick={closeAjoErrorDialog}
+		></button>
+		<div
+			class="persona-dialog ajo-error-dialog"
+			role="dialog"
+			aria-modal="true"
+			tabindex="-1"
+			aria-labelledby="ajo-error-dialog-title"
+		>
+			<header class="persona-dialog-header">
+				<div>
+					<h2 id="ajo-error-dialog-title" class="persona-dialog-title">AJO send failed</h2>
+					<p class="persona-dialog-subtitle">Full response from the AJO API — select or copy below</p>
+				</div>
+				<div class="dialog-header-actions">
+					<button
+						type="button"
+						class="persona-dialog-icon-btn"
+						class:done={ajoErrorCopyStatus === 'done'}
+						onclick={copyAjoErrorDialog}
+						title="Copy to clipboard"
+						aria-label={ajoErrorCopyStatus === 'done' ? 'Copied' : 'Copy to clipboard'}
+					>
+						{#if ajoErrorCopyStatus === 'done'}
+							<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+								<path
+									d="M2.5 7.25 5.5 10.25 11.5 3.75"
+									stroke="currentColor"
+									stroke-width="1.5"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+								/>
+							</svg>
+						{:else}
+							<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+								<rect
+									x="4.5"
+									y="4.5"
+									width="7"
+									height="7"
+									rx="1"
+									stroke="currentColor"
+									stroke-width="1.25"
+								/>
+								<path
+									d="M3 9.5V3.5a1 1 0 0 1 1-1H9"
+									stroke="currentColor"
+									stroke-width="1.25"
+									stroke-linecap="round"
+								/>
+							</svg>
+						{/if}
+					</button>
+					<button
+						type="button"
+						class="persona-dialog-close"
+						onclick={closeAjoErrorDialog}
+						aria-label="Close"
+					>
+						×
+					</button>
+				</div>
+			</header>
+
+			<textarea
+				class="ajo-error-detail"
+				readonly
+				value={ajoErrorDialogText}
+				spellcheck={false}
+				aria-label="AJO error details"
+			></textarea>
+
+			<footer class="persona-dialog-footer">
+				<button type="button" class="btn-create" onclick={closeAjoErrorDialog}>OK</button>
 			</footer>
 		</div>
 	</div>
@@ -1701,11 +1896,11 @@
 		z-index: 200;
 		display: flex;
 		align-items: center;
-		gap: 12px;
-		padding: 0 20px;
+		gap: 10px;
+		padding: 0 18px;
 		height: 48px;
 		background: #111;
-		border-bottom: 1px solid #222;
+		border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 		flex-shrink: 0;
 	}
 
@@ -1725,8 +1920,8 @@
 
 	.topbar-divider {
 		width: 1px;
-		height: 16px;
-		background: #2e2e2e;
+		height: 14px;
+		background: rgba(255, 255, 255, 0.1);
 		flex-shrink: 0;
 	}
 
@@ -1745,9 +1940,9 @@
 		align-items: center;
 		gap: 5px;
 		font-size: 11px;
-		font-weight: 600;
-		padding: 4px 9px;
-		border-radius: 999px;
+		font-weight: 500;
+		padding: 5px 10px;
+		border-radius: 6px;
 		letter-spacing: 0.1px;
 		flex-shrink: 0;
 	}
@@ -1760,8 +1955,8 @@
 	}
 
 	.sync-never-pushed {
-		background: #27272a;
-		color: #d4d4d8;
+		background: rgba(255, 255, 255, 0.06);
+		color: #a1a1aa;
 	}
 
 	.sync-never-pushed .sync-dot {
@@ -1769,23 +1964,21 @@
 	}
 
 	.sync-synced {
-		background: #14532d;
-		color: #bbf7d0;
+		background: rgba(74, 222, 128, 0.12);
+		color: #86efac;
 	}
 
 	.sync-synced .sync-dot {
 		background: #4ade80;
-		box-shadow: 0 0 0 2px rgba(74, 222, 128, 0.25);
 	}
 
 	.sync-stale {
-		background: #431407;
-		color: #fed7aa;
+		background: rgba(251, 146, 60, 0.14);
+		color: #fdba74;
 	}
 
 	.sync-stale .sync-dot {
 		background: #fb923c;
-		box-shadow: 0 0 0 2px rgba(251, 146, 60, 0.25);
 	}
 
 	.author-links {
@@ -1803,20 +1996,18 @@
 		font-weight: 500;
 		color: #a1a1aa;
 		text-decoration: none;
-		padding: 3px 7px;
-		border-radius: 5px;
-		border: 1px solid #3f3f46;
+		padding: 5px 8px;
+		border-radius: 6px;
+		border: none;
 		white-space: nowrap;
 		flex-shrink: 0;
 		transition:
-			color 0.1s,
-			border-color 0.1s,
-			background 0.1s;
+			color 0.12s,
+			background 0.12s;
 	}
 	.open-cf-link:hover {
 		color: #e4e4e7;
-		border-color: #52525b;
-		background: #27272a;
+		background: rgba(255, 255, 255, 0.08);
 	}
 
 	.topbar-spacer {
@@ -1826,60 +2017,84 @@
 	.ajo-group {
 		display: flex;
 		align-items: center;
-		gap: 8px;
+		gap: 14px;
 		flex-shrink: 0;
 	}
 
-	.ajo-actions {
+	.ajo-html-actions {
 		display: flex;
-		align-items: stretch;
-		border-radius: 6px;
-		overflow: hidden;
-		box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
+		align-items: center;
+		gap: 6px;
 	}
 
-	.ajo-actions .export-btn {
-		border-radius: 0;
-	}
-
-	.ajo-actions .export-btn:first-child {
-		border-top-left-radius: 6px;
-		border-bottom-left-radius: 6px;
-	}
-
-	.ajo-actions .ajo-icon-btn {
+	.ajo-html-btn {
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		width: 30px;
-		padding: 6px 0;
-		border-left: 1px solid rgba(0, 0, 0, 0.08);
+		width: 28px;
+		height: 28px;
+		padding: 0;
+		border-radius: 6px;
+		border: none;
+		background: transparent;
+		color: #a1a1aa;
+		cursor: pointer;
+		flex-shrink: 0;
+		transition:
+			color 0.12s,
+			background 0.12s;
 	}
 
-	.ajo-actions .ajo-icon-btn-last {
-		border-top-right-radius: 6px;
-		border-bottom-right-radius: 6px;
+	.ajo-html-btn:hover:not(:disabled) {
+		color: #e4e4e7;
+		background: rgba(255, 255, 255, 0.08);
 	}
 
-	.ajo-actions .ajo-icon-btn.done {
-		color: #15803d;
+	.ajo-html-btn:disabled {
+		opacity: 0.45;
+		cursor: default;
+	}
+
+	.ajo-html-btn.loading {
+		opacity: 0.55;
+	}
+
+	.ajo-html-btn.done {
+		color: #4ade80;
+		background: rgba(74, 222, 128, 0.12);
+	}
+
+	.ajo-html-btn.error {
+		color: #fca5a5;
+		background: rgba(248, 113, 113, 0.12);
+	}
+
+	.ajo-push-group {
+		display: flex;
+		align-items: center;
+		gap: 8px;
 	}
 
 	.export-btn {
 		background: #5b5bd6;
 		color: #fff;
 		border: none;
-		border-radius: 6px;
-		padding: 6px 14px;
+		border-radius: 8px;
+		padding: 7px 14px;
 		font-size: 12px;
 		font-weight: 600;
 		cursor: pointer;
 		white-space: nowrap;
 		letter-spacing: 0.1px;
-		transition: background 0.1s;
+		transition:
+			background 0.12s,
+			transform 0.12s;
 	}
 	.export-btn:hover:not(:disabled) {
-		background: #4f4ec9;
+		background: #6d6ce0;
+	}
+	.export-btn:active:not(:disabled) {
+		transform: scale(0.98);
 	}
 	.export-btn:disabled {
 		opacity: 0.5;
@@ -1894,14 +2109,6 @@
 	.export-btn.error {
 		background: #dc2626;
 	}
-	.export-btn.secondary {
-		background: #fff;
-		color: #333;
-		border: 1px solid #ccc;
-	}
-	.export-btn.secondary:hover:not(:disabled) {
-		background: #f5f5f5;
-	}
 	.export-error-hint {
 		font-size: 11px;
 		color: #dc2626;
@@ -1909,6 +2116,21 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+
+	button.export-error-hint {
+		border: none;
+		padding: 0;
+		margin: 0;
+		background: none;
+		font: inherit;
+		cursor: pointer;
+		text-decoration: underline;
+		text-underline-offset: 2px;
+	}
+
+	button.export-error-hint:hover {
+		color: #b91c1c;
 	}
 
 	/* ── Panels ──────────────────────────────────────────────────────────────── */
@@ -1980,14 +2202,11 @@
 		outline: none;
 	}
 
-	/* Pickers (template + persona) */
+	/* Template picker */
 	.picker-bar {
-		padding: 12px 16px;
-		border-bottom: 1px solid #f4f4f5;
+		padding: 10px 14px;
+		border-bottom: 1px solid #f0f0f1;
 		flex-shrink: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 12px;
 	}
 
 	.picker-section {
@@ -2023,33 +2242,28 @@
 		width: 100%;
 		height: 36px;
 		padding: 0 10px 0 12px;
-		border: 1px solid #e4e4e7;
+		border: none;
 		border-radius: 8px;
-		background: #fff;
+		background: #f4f4f5;
 		color: #111;
 		font-size: 13px;
 		text-align: left;
 		cursor: pointer;
 		outline: none;
-		transition:
-			border-color 0.12s,
-			box-shadow 0.12s,
-			background 0.12s;
+		transition: background 0.12s, color 0.12s;
 	}
 
 	.dropdown-trigger:hover:not(:disabled) {
-		border-color: #d4d4d8;
-		background: #fafafa;
+		background: #ececed;
 	}
 
 	.dropdown-trigger:focus-visible,
 	.dropdown.open .dropdown-trigger {
-		border-color: #5b5bd6;
-		box-shadow: 0 0 0 3px rgba(91, 91, 214, 0.14);
+		background: #ededfc;
 	}
 
 	.dropdown-trigger:disabled {
-		opacity: 0.65;
+		opacity: 0.55;
 		cursor: default;
 		background: #f4f4f5;
 	}
@@ -2094,19 +2308,19 @@
 
 	.dropdown-menu {
 		position: absolute;
-		top: calc(100% + 4px);
+		top: calc(100% + 6px);
 		left: 0;
 		right: 0;
 		z-index: 50;
 		margin: 0;
-		padding: 4px;
+		padding: 6px;
 		list-style: none;
 		background: #fff;
-		border: 1px solid #e4e4e7;
-		border-radius: 8px;
+		border: none;
+		border-radius: 10px;
 		box-shadow:
-			0 4px 6px -1px rgba(0, 0, 0, 0.06),
-			0 10px 24px -4px rgba(0, 0, 0, 0.1);
+			0 2px 8px rgba(0, 0, 0, 0.06),
+			0 12px 32px rgba(0, 0, 0, 0.1);
 		max-height: 220px;
 		overflow-y: auto;
 	}
@@ -2131,6 +2345,22 @@
 
 	.dropdown-option.selected {
 		background: #ededfc;
+	}
+
+	.dropdown-option-muted {
+		font-size: 12px;
+		color: #71717a;
+	}
+
+	.dropdown-option-muted:hover:not(:disabled) {
+		color: #3f3f46;
+	}
+
+	.dropdown-divider {
+		height: 1px;
+		margin: 4px 6px;
+		background: #f0f0f1;
+		list-style: none;
 	}
 
 	.dropdown-option.selected:hover {
@@ -2178,39 +2408,35 @@
 	.picker-action-btn {
 		height: 36px;
 		padding: 0 12px;
-		border: 1px solid #e4e4e7;
+		border: none;
 		border-radius: 8px;
 		font-size: 12px;
 		font-weight: 600;
-		color: #3f3f46;
-		background: #fff;
+		color: #52525b;
+		background: transparent;
 		cursor: pointer;
 		white-space: nowrap;
-		transition: background 0.1s, border-color 0.1s, color 0.1s;
+		transition: background 0.12s, color 0.12s;
 	}
 
 	.picker-action-btn:hover:not(:disabled) {
-		background: #f4f4f5;
-		border-color: #d4d4d8;
+		background: #f0f0f1;
+		color: #18181b;
 	}
 
 	.picker-action-btn:disabled {
-		opacity: 0.5;
+		opacity: 0.45;
 		cursor: default;
 	}
 
 	.picker-action-btn.accent {
 		color: #5b5bd6;
-		background: #ededfc;
-		border-color: #e4e4e7;
+		background: rgba(91, 91, 214, 0.1);
 	}
 
 	.picker-action-btn.accent:hover:not(:disabled) {
-		background: #ddddf8;
-	}
-
-	.brand-dropdown {
-		flex: 0 0 190px;
+		background: rgba(91, 91, 214, 0.16);
+		color: #4f4ec9;
 	}
 
 	/* Persona edit dialog */
@@ -2291,6 +2517,62 @@
 	.persona-dialog-close:hover {
 		background: #f4f4f5;
 		color: #111;
+	}
+
+	.dialog-header-actions {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		flex-shrink: 0;
+	}
+
+	.persona-dialog-icon-btn {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 28px;
+		height: 28px;
+		border: none;
+		border-radius: 6px;
+		background: transparent;
+		color: #71717a;
+		cursor: pointer;
+		transition:
+			background 0.12s,
+			color 0.12s;
+	}
+
+	.persona-dialog-icon-btn:hover {
+		background: #f4f4f5;
+		color: #111;
+	}
+
+	.persona-dialog-icon-btn.done {
+		color: #16a34a;
+	}
+
+	.persona-dialog.ajo-error-dialog {
+		width: min(720px, 100%);
+		max-height: min(85vh, 100%);
+	}
+
+	.ajo-error-detail {
+		flex: 1;
+		min-height: 240px;
+		max-height: 50vh;
+		margin: 0;
+		padding: 14px 16px;
+		border: none;
+		border-bottom: 1px solid #f4f4f5;
+		outline: none;
+		resize: vertical;
+		font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+		font-size: 11px;
+		line-height: 1.5;
+		color: #1a1a1a;
+		background: #fafafa;
+		white-space: pre;
+		overflow: auto;
 	}
 
 	.persona-json-editor {
@@ -2386,21 +2668,67 @@
 		padding: 0 10px;
 		background: transparent;
 		color: #71717a;
-		border: 1px solid #e4e4e7;
-		border-radius: 5px;
+		border: none;
+		border-radius: 6px;
 		font-size: 12px;
 		cursor: pointer;
+		transition: background 0.12s, color 0.12s;
 	}
 	.btn-cancel:hover {
-		background: #f4f4f5;
+		background: #f0f0f1;
+		color: #3f3f46;
 	}
 
 	/* Tabs */
 	.tab-bar {
 		display: flex;
+		align-items: stretch;
 		border-bottom: 1px solid #e4e4e7;
 		flex-shrink: 0;
 		background: #fafafa;
+	}
+
+	.tab-group {
+		position: relative;
+		flex: 1;
+		min-width: 0;
+		border-bottom: 2px solid transparent;
+		margin-bottom: -1px;
+	}
+
+	.tab-group.active {
+		border-bottom-color: #5b5bd6;
+	}
+
+	.tab-group.active .tab-code {
+		color: #5b5bd6;
+	}
+
+	.tab-code {
+		width: 100%;
+		border-bottom: none;
+		margin-bottom: 0;
+	}
+
+	.mjml-docs-link {
+		position: absolute;
+		right: 8px;
+		top: 50%;
+		transform: translateY(-50%);
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		line-height: 0;
+		border-radius: 3px;
+		opacity: 0.85;
+		transition:
+			opacity 0.12s,
+			transform 0.12s;
+	}
+
+	.mjml-docs-link:hover {
+		opacity: 1;
+		transform: translateY(-50%) scale(1.08);
 	}
 
 	.tab {
@@ -2443,27 +2771,8 @@
 	}
 
 	.mjml-editor {
-		display: block;
-		width: 100%;
-		height: 100%;
+		flex: 1 1 0;
 		min-height: 0;
-		resize: none;
-		border: none;
-		outline: none;
-		padding: 14px 16px;
-		box-sizing: border-box;
-		font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
-		font-size: 12px;
-		line-height: 1.6;
-		color: #1a1a1a;
-		background: #fafafa;
-		tab-size: 2;
-		overflow-y: auto;
-		white-space: pre;
-		overflow-x: auto;
-	}
-	.mjml-editor::placeholder {
-		color: #c4c4c4;
 	}
 
 	.editor-error {
@@ -2611,6 +2920,7 @@
 	.footer-actions {
 		display: flex;
 		align-items: center;
+		justify-content: flex-end;
 		gap: 8px;
 		padding: 10px 16px;
 	}
@@ -2623,8 +2933,9 @@
 	}
 
 	.save-btn {
-		flex: 1;
 		height: 32px;
+		padding: 0 16px;
+		white-space: nowrap;
 		background: #5b5bd6;
 		color: #fff;
 		border: none;
@@ -2656,11 +2967,227 @@
 		flex: 1;
 		min-width: 0;
 		background: #f4f4f5;
-		padding: 32px 24px;
 		overflow-y: auto;
 		display: flex;
 		flex-direction: column;
+		transition: background 0.2s ease;
+	}
+
+	.preview-area.preview-chrome-dark {
+		background: #18181b;
+	}
+
+	.preview-toolbar {
+		display: flex;
+		flex-wrap: wrap;
 		align-items: center;
+		gap: 10px 16px;
+		padding: 8px 16px;
+		flex-shrink: 0;
+		border-bottom: 1px solid #e4e4e7;
+		background: #fafafa;
+	}
+
+	.preview-chrome-dark .preview-toolbar {
+		background: #27272a;
+		border-bottom-color: #3f3f46;
+	}
+
+	.preview-toolbar-section {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		min-width: 0;
+	}
+
+	.preview-toolbar-controls {
+		flex-wrap: wrap;
+		gap: 8px;
+	}
+
+	.preview-toolbar-label {
+		font-size: 10px;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+		color: #a1a1aa;
+		user-select: none;
+		flex-shrink: 0;
+	}
+
+	.preview-chrome-dark .preview-toolbar-label {
+		color: #71717a;
+	}
+
+	.preview-toolbar-divider {
+		width: 1px;
+		height: 20px;
+		background: #e4e4e7;
+		flex-shrink: 0;
+	}
+
+	.preview-chrome-dark .preview-toolbar-divider {
+		background: #3f3f46;
+	}
+
+	.preview-toolbar-spacer {
+		flex: 1;
+		min-width: 12px;
+	}
+
+	.preview-toolbar-select {
+		max-width: 160px;
+		padding: 2px 20px 2px 0;
+		border: none;
+		border-radius: 0;
+		background: transparent;
+		color: #3f3f46;
+		font-size: 12px;
+		font-weight: 500;
+		cursor: pointer;
+		outline: none;
+		appearance: none;
+		background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 14 14' fill='none'%3E%3Cpath d='M3.5 5.25 7 8.75l3.5-3.5' stroke='%2371717a' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+		background-repeat: no-repeat;
+		background-position: right 0 center;
+	}
+
+	.preview-chrome-dark .preview-toolbar-select {
+		color: #e4e4e7;
+		background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 14 14' fill='none'%3E%3Cpath d='M3.5 5.25 7 8.75l3.5-3.5' stroke='%23a1a1aa' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+	}
+
+	.preview-toolbar-select:focus-visible {
+		color: #4338ca;
+	}
+
+	.preview-chrome-dark .preview-toolbar-select:focus-visible {
+		color: #c7d2fe;
+	}
+
+	.preview-toolbar-select:disabled {
+		opacity: 0.5;
+		cursor: default;
+	}
+
+	.preview-icon-btn {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 26px;
+		height: 26px;
+		padding: 0;
+		flex-shrink: 0;
+		border: none;
+		border-radius: 6px;
+		background: transparent;
+		color: #a1a1aa;
+		cursor: pointer;
+	}
+
+	.preview-icon-btn:hover:not(:disabled) {
+		color: #52525b;
+		background: #f0f0f1;
+	}
+
+	.preview-chrome-dark .preview-icon-btn:hover:not(:disabled) {
+		color: #e4e4e7;
+		background: #3f3f46;
+	}
+
+	.preview-icon-toggle-group {
+		display: inline-flex;
+		align-items: center;
+		gap: 2px;
+	}
+
+	.preview-icon-toggle {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 28px;
+		height: 28px;
+		padding: 0;
+		border: none;
+		border-radius: 6px;
+		background: transparent;
+		color: #a1a1aa;
+		cursor: pointer;
+		transition:
+			background 0.12s,
+			color 0.12s;
+	}
+
+	.preview-icon-toggle svg {
+		display: block;
+		flex-shrink: 0;
+		overflow: visible;
+	}
+
+	.preview-icon-toggle:hover {
+		color: #52525b;
+		background: #f0f0f1;
+	}
+
+	.preview-chrome-dark .preview-icon-toggle:hover {
+		color: #e4e4e7;
+		background: #3f3f46;
+	}
+
+	.preview-icon-toggle.pressed {
+		color: #4338ca;
+		background: #ededfc;
+	}
+
+	.preview-chrome-dark .preview-icon-toggle.pressed {
+		color: #c7d2fe;
+		background: #3f3f46;
+	}
+
+	.preview-warnings-badge {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+		padding: 5px 10px;
+		border: 1px solid #fecaca;
+		border-radius: 7px;
+		background: #fef2f2;
+		color: #b91c1c;
+		font-size: 11px;
+		font-weight: 600;
+		cursor: pointer;
+	}
+
+	.preview-warnings-badge.expanded {
+		background: #fee2e2;
+	}
+
+	.preview-warnings-panel {
+		flex-shrink: 0;
+		padding: 8px 16px 10px;
+		background: #fffbeb;
+		border-bottom: 1px solid #fde68a;
+	}
+
+	.preview-chrome-dark .preview-warnings-panel {
+		background: #422006;
+		border-bottom-color: #92400e;
+	}
+
+	.preview-warnings-list {
+		margin: 0;
+		padding: 0 0 0 18px;
+		font-size: 12px;
+		line-height: 1.5;
+		color: #92400e;
+	}
+
+	.preview-chrome-dark .preview-warnings-list {
+		color: #fde68a;
+	}
+
+	.preview-warnings-list li + li {
+		margin-top: 4px;
 	}
 
 	.preview-loading {
@@ -2693,19 +3220,33 @@
 	}
 
 	.preview-stage {
+		flex: 1;
 		width: 100%;
 		display: flex;
 		justify-content: center;
+		padding: 24px;
+	}
+
+	.preview-frame-shell {
+		max-width: 100%;
+		transition: width 0.2s ease;
 	}
 
 	.preview-iframe {
-		width: 600px;
+		display: block;
+		width: 100%;
 		height: 150px;
 		overflow: hidden;
 		border: none;
 		background: #fff;
 		border-radius: 4px;
 		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 4px 24px rgba(0, 0, 0, 0.06);
+	}
+
+	.preview-chrome-dark .preview-iframe {
+		box-shadow:
+			0 1px 3px rgba(0, 0, 0, 0.3),
+			0 4px 24px rgba(0, 0, 0, 0.25);
 	}
 
 	/* ── Add-component context menu ──────────────────────────────────────────── */

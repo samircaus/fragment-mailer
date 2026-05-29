@@ -19,10 +19,11 @@ import {
 	instrumentCFOutputTokens
 } from '$lib/render/inject-ue.js';
 import { buildUEBindings } from '$lib/render/ue-bindings.js';
-import { validate } from '$lib/render/validate.js';
+import { validate, type ValidationWarning } from '$lib/render/validate.js';
 import { flattenPersona, resolvePreviewPersona } from '$lib/personas/validate.js';
 import { getPersonaById } from '$lib/personas/service.js';
 import { resolveBrand } from '$lib/brands/service.js';
+import { applyPreviewColorScheme } from '$lib/preview/color-scheme-preview.js';
 import { buildStaticContext } from '$lib/preview/static-context.js';
 import { getCampaignWithCF } from '$lib/campaigns/service.js';
 import { resolveAppEnv } from '$lib/server/app-env.js';
@@ -35,6 +36,8 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
 	const personaJson = url.searchParams.get('persona');
 	const brandId = url.searchParams.get('brandId');
 	const brandName = url.searchParams.get('brandName');
+	const colorSchemeParam = url.searchParams.get('colorScheme')?.trim().toLowerCase();
+	const previewColorScheme = colorSchemeParam === 'dark' ? 'dark' : 'light';
 
 	const campaignResult = await getCampaignWithCF(campaignId, env);
 	if (campaignResult.error || !campaignResult.data) {
@@ -108,7 +111,10 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
 	const fieldTypes: Record<string, string> = {};
 	for (const [id, def] of Object.entries(definition.fields)) fieldTypes[id] = def.type;
 	const validationWarnings = validate(cf.fields, fieldTypes, html);
-	const allWarnings = [...resolveWarnings, ...validationWarnings.map((w) => w.message)];
+	const allWarnings = [
+		...resolveWarnings,
+		...validationWarnings.map(formatValidationWarning)
+	];
 
 	if (allWarnings.length > 0) {
 		const warningBlock = allWarnings
@@ -116,6 +122,8 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
 			.join('\n');
 		html = html.replace('</body>', `\n${warningBlock}\n</body>`);
 	}
+
+	html = applyPreviewColorScheme(html, previewColorScheme);
 
 	return new Response(html, {
 		headers: {
@@ -128,6 +136,17 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
 	});
 };
 
+
+function formatValidationWarning(w: ValidationWarning): string {
+	if (w.fieldPath.startsWith('cf.')) {
+		const fieldName = w.fieldPath.slice(3);
+		return `Content field “${fieldName}”: ${w.message} ${w.suggestion}`;
+	}
+	if (w.fieldPath.startsWith('html/')) {
+		return `Rendered output: ${w.message} ${w.suggestion}`;
+	}
+	return `${w.message} ${w.suggestion}`;
+}
 
 // Merge referenced CF objects into the top-level cf context so the resolver
 // can traverse {{cf.featuredOffer.headline}} correctly.

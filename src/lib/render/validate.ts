@@ -30,19 +30,15 @@ const AJO_COMMENT_TOKEN_RE = /\{\{!--[\s\S]*?--\}\}/;
 // Rule 4: Empty structural tags in final HTML
 const EMPTY_TAG_RE = /<(h[1-6]|p|td)[^>]*>\s*<\/\1>/g;
 
-// Rule 5: Raw HTML in what should be plain-text content
-const RAW_HTML_IN_TEXT_RE = /<[a-z][a-z0-9]*[\s/>]/i;
-
 export function validateCFFields(
 	fields: Record<string, unknown>,
-	fieldTypes: Record<string, string>
+	_fieldTypes: Record<string, string>
 ): ValidationResult {
 	const warnings: ValidationWarning[] = [];
 
 	for (const [fieldName, value] of Object.entries(fields)) {
 		if (typeof value !== 'string') continue;
 
-		const fieldType = fieldTypes[fieldName] ?? 'text';
 		const path = `cf.${fieldName}`;
 
 		// Rule 1: escaped HTML entities in any field
@@ -53,16 +49,6 @@ export function validateCFFields(
 				message: `Field contains escaped HTML markup (e.g. &lt;sub&gt;). This will render as literal text in the email.`,
 				suggestion:
 					'Remove the HTML tags from this field. Use a rich-text field type if formatting is needed.'
-			});
-		}
-
-		// Rule 5: plain-text field contains raw HTML
-		if (fieldType === 'text' && RAW_HTML_IN_TEXT_RE.test(value)) {
-			warnings.push({
-				severity: 'warning',
-				fieldPath: path,
-				message: `Plain-text field contains what looks like raw HTML markup.`,
-				suggestion: 'Plain-text fields should contain only text. Move HTML to a rich-text field.'
 			});
 		}
 	}
