@@ -15,7 +15,6 @@ export interface AJOClientOptions {
 	apiKey: string;
 	accessToken: string;
 	baseUrl?: string;
-	mockMode?: boolean;
 }
 
 type Result<T> = { data: T; error?: never } | { error: string; data?: never; status?: number };
@@ -46,14 +45,8 @@ export async function upsertContentTemplate(
 	env: AppEnv,
 	templateId?: string
 ): Promise<Result<AJOContentTemplateResult>> {
-	const creds = env.AJO_IMS_CLIENT_ID;
-	if (env.MOCK_MODE === 'true' || !creds) {
-		return {
-			data: {
-				id: templateId ?? `mock-template-${Date.now()}`,
-				status: templateId ? 'updated' : 'created'
-			}
-		};
+	if (!env.AJO_IMS_CLIENT_ID?.trim()) {
+		return { error: 'AJO credentials not configured (AJO_IMS_CLIENT_ID).', status: 503 };
 	}
 
 	let token: string;

@@ -6,12 +6,14 @@ import type { RequestHandler } from './$types';
 import { z } from 'zod';
 
 import { getCampaignWithCF } from '$lib/campaigns/service.js';
-import { loadTemplate } from '$lib/templates/registry.js';
-import type { TemplateDefinition, TemplateEntry } from '$lib/templates/registry.js';
+import { loadTemplate } from '$lib/templates/service.js';
+import type { TemplateDefinition } from '$lib/templates/types.js';
 import { resolve } from '$lib/render/resolve.js';
 import { compileMJML } from '$lib/render/mjml.js';
 import { instrumentCFOutputTokens } from '$lib/render/inject-ue.js';
-import { flattenPersona, resolvePreviewPersona } from '$lib/personas/samples.js';
+import { flattenPersona, resolvePreviewPersona } from '$lib/personas/validate.js';
+import { resolveBrand } from '$lib/brands/service.js';
+import { buildStaticContext } from '$lib/preview/static-context.js';
 import { resolveAppEnv } from '$lib/server/app-env.js';
 
 const CompileRequestSchema = z.object({
@@ -19,7 +21,8 @@ const CompileRequestSchema = z.object({
 	campaignId: z.string(),
 	templateId: z.string(),
 	personaId: z.string().optional(),
-	companyName: z.string().optional(),
+	brandId: z.string().optional(),
+	brandName: z.string().optional(),
 	persona: z.unknown().optional()
 });
 
@@ -38,7 +41,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 		throw error(400, `Invalid request: ${parsed.error.message}`);
 	}
 
-	const { mjml, campaignId, templateId, personaId, companyName, persona } = parsed.data;
+	const { mjml, campaignId, templateId, personaId, brandId, brandName, persona } = parsed.data;
 
 	const campaignResult = await getCampaignWithCF(campaignId, env);
 	if (campaignResult.error || !campaignResult.data) {
@@ -47,24 +50,26 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 		throw error(status, message);
 	}
 
-	const templateResult = loadTemplate(templateId);
+	const templateResult = await loadTemplate(platform, templateId);
 	if (templateResult.error) {
 		throw error(404, templateResult.error);
 	}
-	const { definition } = templateResult.data as TemplateEntry;
+	const { definition } = templateResult.data!;
 
 	const { cf } = campaignResult.data;
 	const cfContext = buildCFContext(cf.fields, definition, env?.AEM_BASE_URL);
 
-	const personaJson =
-		persona != null && typeof persona === 'object' ? JSON.stringify(persona) : null;
-	const resolvedPersona = resolvePreviewPersona(personaId ?? 'persona-1', personaJson);
+	const resolvedPersona = resolvePreviewPersona(
+		personaId ?? 'persona-1',
+		persona != null && typeof persona === 'object' ? JSON.stringify(persona) : null
+	);
+	const brand = await resolveBrand(platform, { brandId, brandName });
 
 	const context = {
 		cf: cfContext,
 		profile: flattenPersona(resolvedPersona),
 		preserveProfile: false,
-		static: buildStaticContext(normalizeCompanyName(companyName))
+		static: buildStaticContext(brand)
 	};
 
 	const instrumentedMJML = instrumentCFOutputTokens(mjml);
@@ -106,19 +111,4 @@ function buildCFContext(
 	}
 
 	return context;
-}
-
-function buildStaticContext(companyName: string): Record<string, unknown> {
-	return {
-		year: new Date().getFullYear(),
-		companyName,
-		logoUrl: 'https://via.placeholder.com/120x40?text=Logo',
-		unsubscribeUrl: '{{static.unsubscribeUrl}}',
-		privacyUrl: 'https://example.com/privacy'
-	};
-}
-
-function normalizeCompanyName(raw?: string): string {
-	const trimmed = raw?.trim();
-	return trimmed ? trimmed.slice(0, 120) : 'Acme Corp';
 }

@@ -4,12 +4,15 @@
 
 	let { data }: { data: PageData } = $props();
 
-	const { fragment, model, authorHost, previewUrl } = data;
+	const fragment = $derived(data.fragment);
+	const model = $derived(data.model);
+	const authorHost = $derived(data.authorHost);
+	const previewUrl = $derived(data.previewUrl);
 
-	const ueResource = cfUeResourceUrn(fragment.path);
+	const ueResource = $derived(cfUeResourceUrn(fragment.path));
 
 	// Build a field-name → model metadata lookup for labels and types
-	const fieldMeta = new Map(model?.fields.map((f) => [f.name, f]) ?? []);
+	const fieldMeta = $derived(new Map(model?.fields.map((f) => [f.name, f]) ?? []));
 </script>
 
 <svelte:head>

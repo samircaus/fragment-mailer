@@ -1,0 +1,51 @@
+[
+  {
+    "id": "hero",
+    "fields": [
+      {
+        "component": "text",
+        "name": "heroHeadline",
+        "label": "Hero Headline",
+        "valueType": "string",
+        "required": true
+      },
+      {
+        "component": "text",
+        "name": "subtitle",
+        "label": "Subtitle",
+        "valueType": "string"
+      }
+    ]
+  },
+  {
+    "id": "promo-body",
+    "fields": [
+      {
+        "component": "richtext",
+        "name": "bodyCopy",
+        "label": "Body Copy",
+        "valueType": "string",
+        "required": true
+      }
+    ]
+  },
+  {
+    "id": "promo-cta",
+    "fields": [
+      {
+        "component": "text",
+        "name": "ctaText",
+        "label": "CTA Button Text",
+        "valueType": "string",
+        "required": true
+      },
+      {
+        "component": "text",
+        "name": "ctaUrl",
+        "label": "CTA URL",
+        "valueType": "string",
+        "required": true
+      }
+    ]
+  }
+]

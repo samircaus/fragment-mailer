@@ -1,0 +1,46 @@
+{
+  "groups": [
+    {
+      "title": "Email Campaign",
+      "id": "email-campaign",
+      "components": [
+        {
+          "title": "Hero",
+          "id": "hero",
+          "plugins": {
+            "aem": {
+              "cf": {
+                "name": "Hero",
+                "cfModel": "EmailCampaign"
+              }
+            }
+          }
+        },
+        {
+          "title": "Body Copy",
+          "id": "promo-body",
+          "plugins": {
+            "aem": {
+              "cf": {
+                "name": "BodyText",
+                "cfModel": "EmailCampaign"
+              }
+            }
+          }
+        },
+        {
+          "title": "CTA",
+          "id": "promo-cta",
+          "plugins": {
+            "aem": {
+              "cf": {
+                "name": "CTA",
+                "cfModel": "EmailCampaign"
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

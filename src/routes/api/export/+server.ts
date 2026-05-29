@@ -10,12 +10,15 @@ import { fetchCampaignFragmentAtPath } from '$lib/aem/delivery.js';
 import type { AppEnv } from '$lib/aem/env.js';
 import { resolveAppEnv } from '$lib/server/app-env.js';
 import type { CFFragment, ResolvedCFData } from '$lib/aem/types.js';
-import { loadTemplate } from '$lib/templates/registry.js';
-import type { TemplateEntry, TemplateDefinition } from '$lib/templates/registry.js';
+import { loadTemplate } from '$lib/templates/service.js';
+import type { TemplateDefinition } from '$lib/templates/types.js';
 import { resolve } from '$lib/render/resolve.js';
 import { compileMJML } from '$lib/render/mjml.js';
 import { rewriteCfRefsForAjo, wrapAjoControlTagsForMjml } from '$lib/render/ajo-export.js';
-import { getPersona, flattenPersona } from '$lib/personas/samples.js';
+import { flattenPersona } from '$lib/personas/validate.js';
+import { getPersonaById } from '$lib/personas/service.js';
+import { resolveBrand } from '$lib/brands/service.js';
+import { buildStaticContext } from '$lib/preview/static-context.js';
 import { buildManifest } from '$lib/manifest/builder.js';
 import { getCampaignWithCF } from '$lib/campaigns/service.js';
 
@@ -24,7 +27,8 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 
 	const campaignId = url.searchParams.get('campaignId');
 	const personaId = url.searchParams.get('personaId') ?? 'persona-1';
-	const companyName = normalizeCompanyName(url.searchParams.get('companyName'));
+	const brandId = url.searchParams.get('brandId');
+	const brandName = url.searchParams.get('brandName');
 	const cfMode = parseCfMode(url.searchParams.get('cfMode'));
 
 	if (!campaignId) {
@@ -41,24 +45,25 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 	const { campaign, cf: primaryCF } = campaignResult.data;
 
 	// Load template
-	const templateResult = loadTemplate(campaign.templateId);
+	const templateResult = await loadTemplate(platform, campaign.templateId);
 	if (templateResult.error) {
 		throw error(404, templateResult.error);
 	}
-	const { definition, mjml } = templateResult.data as TemplateEntry;
+	const { definition, mjml } = templateResult.data!;
 
 	// Resolve referenced CFs (one level deep) — skipped when already hydrated via direct-hydrated
 	const referencedCFs = await resolveReferencedCFs(primaryCF.fields, definition, env);
 
 	// Build context — preserve profile tokens for AJO send-time resolution
-	const persona = getPersona(personaId);
+	const persona = await getPersonaById(platform, personaId);
+	const brand = await resolveBrand(platform, { brandId, brandName });
 	const flatProfile = flattenPersona(persona);
 
 	const context = {
 		cf: buildCFContext(primaryCF.fields, referencedCFs),
 		profile: flatProfile,
 		preserveProfile: true, // export mode: profile tokens pass through to AJO
-		static: buildStaticContext(companyName)
+		static: buildStaticContext(brand)
 	};
 
 	// Resolve + compile
@@ -162,19 +167,4 @@ function buildCFContext(
 	}
 
 	return context;
-}
-
-function buildStaticContext(companyName: string): Record<string, unknown> {
-	return {
-		year: new Date().getFullYear(),
-		companyName,
-		logoUrl: 'https://via.placeholder.com/120x40?text=Logo',
-		unsubscribeUrl: '{{static.unsubscribeUrl}}',
-		privacyUrl: 'https://example.com/privacy'
-	};
-}
-
-function normalizeCompanyName(raw: string | null): string {
-	const trimmed = raw?.trim();
-	return trimmed ? trimmed.slice(0, 120) : 'Acme Corp';
 }

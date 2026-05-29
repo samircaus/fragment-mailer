@@ -3,12 +3,11 @@ import type { AEMClientOptions } from './client.js';
 /** AEM instance: Author (Sites CF Management + OAuth) or Publish (Delivery / GraphQL). */
 export type AemTier = 'author' | 'publish';
 
-/** How to load CFs from AEM Publish when not in mock mode. */
+/** How to load CFs from AEM Publish. */
 export type AemFetchMode = 'openapi' | 'graphql';
 
 /** Worker bindings + vars (see app.d.ts and .dev.vars). */
 export interface AppEnv {
-	MOCK_MODE?: string;
 	/** author | publish — default publish */
 	AEM_TIER?: string;
 	AEM_BASE_URL?: string;
@@ -42,6 +41,12 @@ export interface AppEnv {
 	AJO_IMS_CLIENT_ID?: string;
 	AJO_IMS_CLIENT_SECRET?: string;
 	AJO_SANDBOX?: string;
+	/** Experience Cloud hash tenant for CF editor links (URL segment after #/@). Default: psc */
+	AEM_CF_EDITOR_TENANT?: string;
+}
+
+export function cfEditorTenant(env?: AppEnv): string {
+	return env?.AEM_CF_EDITOR_TENANT?.trim() || 'psc';
 }
 
 export interface GraphQLConfig {
@@ -52,11 +57,6 @@ export interface GraphQLConfig {
 }
 
 export const DEFAULT_CAMPAIGNS_PATH = '/content/dam/email/en/campaigns';
-
-export function isMockMode(env?: AppEnv): boolean {
-	if (!env) return true;
-	return env.MOCK_MODE === 'true';
-}
 
 function resolveApiKey(raw: string | undefined): string | undefined {
 	const key = raw?.trim();
@@ -77,8 +77,7 @@ export function normalizeAemBaseUrl(url: string): string {
 export function aemClientOptions(env?: AppEnv): AEMClientOptions {
 	return {
 		baseUrl: normalizeAemBaseUrl(env?.AEM_BASE_URL ?? ''),
-		apiKey: resolveApiKey(env?.AEM_API_KEY),
-		mockMode: isMockMode(env)
+		apiKey: resolveApiKey(env?.AEM_API_KEY)
 	};
 }
 

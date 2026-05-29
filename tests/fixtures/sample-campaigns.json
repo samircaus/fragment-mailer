@@ -4,6 +4,7 @@
     "name": "Spring Promo 2025",
     "templateId": "promo",
     "cfPath": "/content/dam/campaigns/spring-promo-2025",
+    "cfUuid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
     "status": "draft",
     "createdAt": "2025-03-10T12:00:00Z",
     "updatedAt": "2025-03-15T10:30:00Z"
@@ -13,6 +14,7 @@
     "name": "Welcome Series — Email 1",
     "templateId": "promo",
     "cfPath": "/content/dam/campaigns/welcome-series-1",
+    "cfUuid": "bbbbbbbb-cccc-dddd-eeee-ffffffffffff",
     "status": "draft",
     "createdAt": "2025-01-20T09:00:00Z",
     "updatedAt": "2025-02-01T09:00:00Z"

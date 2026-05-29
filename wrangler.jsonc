@@ -36,8 +36,14 @@
 	 * Note: Use secrets to store sensitive data.
 	 * https://developers.cloudflare.com/workers/configuration/secrets/
 	 */
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "fragment-mailer",
+			"database_id": "823cd014-02a7-4b77-af8a-87d15aff31c8"
+		}
+	],
 	"vars": {
-		"MOCK_MODE": "false",
 		"AEM_TIER": "author",
 		"AEM_BASE_URL": "https://author-p125048-e1847106.adobeaemcloud.com",
 		"AEM_CAMPAIGNS_PATH": "/content/dam/email/en/campaigns",

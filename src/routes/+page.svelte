@@ -1,16 +1,30 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { page } from '$app/stores';
+	import { cfExperienceCloudEditorUrl } from '$lib/aem/author-links.js';
+	import { displayStatusHint, displayStatusLabel } from '$lib/db/attach-email-status.js';
+	import type { EmailStatusInfo } from '$lib/db/email-status-types.js';
 
 	interface Campaign {
 		id: string;
 		name: string;
+		cfPath: string;
+		cfUuid?: string;
 		templateId: string;
 		status: string;
-		updatedAt: string;
+		updatedAt?: string;
+		emailStatus?: EmailStatusInfo;
+	}
+
+	const aemAuthorUrl = $derived($page.data?.aem?.authorUrl ?? $page.data?.ue?.aemBaseUrl ?? null);
+	const cfEditorTenant = $derived($page.data?.aem?.cfEditorTenant ?? 'psc');
+
+	function authorUrlForCampaign(campaign: Campaign): string | null {
+		if (!campaign.cfUuid) return null;
+		return cfExperienceCloudEditorUrl(campaign.cfUuid, aemAuthorUrl, cfEditorTenant);
 	}
 
 	let campaigns = $state<Campaign[]>([]);
-	let mockMode = $state(false);
 	let isLoading = $state(true);
 	let loadError = $state('');
 
@@ -33,9 +47,8 @@
 				}
 				throw new Error(detail || `Failed to load campaigns (${res.status})`);
 			}
-			const data = (await res.json()) as { campaigns: Campaign[]; mockMode: boolean };
+			const data = (await res.json()) as { campaigns: Campaign[] };
 			campaigns = data.campaigns;
-			mockMode = data.mockMode;
 		} catch (err) {
 			loadError = err instanceof Error ? err.message : 'Failed to load campaigns';
 		} finally {
@@ -67,9 +80,6 @@
 	<main>
 		<div class="section-header">
 			<h2>Campaigns</h2>
-			{#if mockMode}
-				<span class="badge">Mock</span>
-			{/if}
 		</div>
 
 		{#if isLoading}
@@ -84,14 +94,37 @@
 					<a href="/editor/{campaign.id}" class="campaign-card">
 						<div class="card-top">
 							<span class="template-chip">{campaign.templateId}</span>
-							<span class="status-chip status-{campaign.status}">{campaign.status}</span>
+							<span
+								class="status-chip status-{campaign.status.replace('_', '-')}"
+								title={displayStatusHint(campaign.status)}
+							>
+								<span class="status-dot" aria-hidden="true"></span>
+								{displayStatusLabel(campaign.status)}
+							</span>
 						</div>
 						<h3>{campaign.name}</h3>
 						<div class="card-footer">
 							{#if campaign.updatedAt}
 								<span class="date">{formatDate(campaign.updatedAt)}</span>
 							{/if}
-							<span class="card-arrow">Open →</span>
+							<div class="card-actions">
+								{#if authorUrlForCampaign(campaign)}
+									<button
+										type="button"
+										class="card-author-link"
+										title="Open in AEM Author"
+										onclick={(e) => {
+											e.stopPropagation();
+											e.preventDefault();
+											const url = authorUrlForCampaign(campaign);
+											if (url) window.open(url, '_blank', 'noopener,noreferrer');
+										}}
+									>
+										Author ↗
+									</button>
+								{/if}
+								<span class="card-arrow">Open →</span>
+							</div>
 						</div>
 					</a>
 				{/each}
@@ -228,20 +261,50 @@
 	}
 
 	.status-chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
 		font-size: 11px;
-		font-weight: 500;
+		font-weight: 600;
 		padding: 2px 8px;
-		border-radius: 4px;
+		border-radius: 999px;
 	}
 
-	.status-draft {
+	.status-dot {
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		flex-shrink: 0;
+	}
+
+	.status-draft,
+	.status-never-pushed {
 		background: #f4f4f5;
-		color: #71717a;
+		color: #52525b;
 	}
 
+	.status-never-pushed .status-dot {
+		background: #a1a1aa;
+	}
+
+	.status-synced,
 	.status-live {
 		background: #dcfce7;
 		color: #15803d;
+	}
+
+	.status-synced .status-dot,
+	.status-live .status-dot {
+		background: #22c55e;
+	}
+
+	.status-stale {
+		background: #fff7ed;
+		color: #c2410c;
+	}
+
+	.status-stale .status-dot {
+		background: #f97316;
 	}
 
 	h3 {
@@ -262,6 +325,30 @@
 	.date {
 		font-size: 12px;
 		color: #a1a1aa;
+	}
+
+	.card-actions {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+	}
+
+	.card-author-link {
+		font: inherit;
+		font-size: 11px;
+		font-weight: 600;
+		color: #71717a;
+		text-decoration: none;
+		padding: 2px 6px;
+		border-radius: 4px;
+		border: 1px solid #e4e4e7;
+		background: transparent;
+		cursor: pointer;
+	}
+	.card-author-link:hover {
+		color: #5b5bd6;
+		border-color: #c7c7f5;
+		background: #f8f8ff;
 	}
 
 	.card-arrow {

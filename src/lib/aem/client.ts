@@ -16,7 +16,6 @@ export interface AEMClientOptions {
 	baseUrl: string;
 	apiKey?: string;
 	serviceToken?: string;
-	mockMode?: boolean;
 }
 
 type Result<T> = { data: T; error?: never } | { error: string; data?: never };
@@ -37,10 +36,6 @@ export async function listContentFragments(
 	folderPath: string,
 	opts: AEMClientOptions
 ): Promise<Result<ContentFragmentItem[]>> {
-	if (opts.mockMode) {
-		return listMockContentFragments();
-	}
-
 	const url = `${opts.baseUrl}/adobe/contentFragments?path=${encodeURIComponent(folderPath)}`;
 	const res = await fetch(url, { headers: deliveryHeaders(opts) });
 	if (!res.ok) {
@@ -115,10 +110,6 @@ async function readResponseSnippet(res: Response): Promise<string> {
 
 /** Fetch a single CF by UUID with direct reference hydration. */
 export async function fetchCFById(id: string, opts: AEMClientOptions): Promise<Result<CFFragment>> {
-	if (opts.mockMode) {
-		return fetchMockCFById(id);
-	}
-
 	const url = `${opts.baseUrl}/adobe/contentFragments/${encodeURIComponent(id)}?references=direct-hydrated`;
 	const res = await fetch(url, { headers: deliveryHeaders(opts) });
 	if (!res.ok) {
@@ -132,10 +123,6 @@ export async function fetchCFById(id: string, opts: AEMClientOptions): Promise<R
 // Fetch a single CF by its DAM path.
 // path format: /content/dam/email/en/campaigns/welcome-series-1
 export async function fetchCF(path: string, opts: AEMClientOptions): Promise<Result<CFFragment>> {
-	if (opts.mockMode) {
-		return fetchMockCF(path);
-	}
-
 	const url = `${opts.baseUrl}/adobe/contentFragments?path=${encodeURIComponent(path)}`;
 	const res = await fetch(url, { headers: deliveryHeaders(opts) });
 	if (!res.ok) {
@@ -261,63 +248,4 @@ function extractNestedReferences(item: ContentFragmentItem): Record<string, unkn
 		}
 	}
 	return out;
-}
-
-// --- Mock support ---
-
-async function listMockContentFragments(): Promise<Result<ContentFragmentItem[]>> {
-	try {
-		const mod = await import('../../../tests/fixtures/sample-campaigns.json', {
-			with: { type: 'json' }
-		});
-		const campaigns = Object.values(
-			mod.default as Record<
-				string,
-				{
-					id: string;
-					name: string;
-					cfPath: string;
-					updatedAt: string;
-				}
-			>
-		);
-		return {
-			data: campaigns.map((c) => ({
-				id: c.id,
-				path: c.cfPath,
-				title: c.name,
-				modified: c.updatedAt
-			}))
-		};
-	} catch {
-		return { error: 'Mock campaigns not found. Ensure tests/fixtures/sample-campaigns.json exists.' };
-	}
-}
-
-async function fetchMockCFById(id: string): Promise<Result<CFFragment>> {
-	try {
-		const mod = await import('../../../tests/fixtures/sample-campaigns.json', {
-			with: { type: 'json' }
-		});
-		const campaigns = mod.default as Record<string, { id: string; cfPath: string }>;
-		const entry = Object.values(campaigns).find((c) => c.id === id) ?? campaigns[id];
-		if (!entry) return { error: `No mock campaign for id: ${id}` };
-		return fetchMockCF(entry.cfPath);
-	} catch {
-		return { error: 'Mock campaigns not found.' };
-	}
-}
-
-async function fetchMockCF(path: string): Promise<Result<CFFragment>> {
-	try {
-		const mod = await import('../../../tests/fixtures/sample-cf.json', {
-			with: { type: 'json' }
-		});
-		const fixtures = mod.default as Record<string, CFFragment>;
-		const match = fixtures[path] ?? Object.values(fixtures)[0];
-		if (!match) return { error: `No mock fixture for path: ${path}` };
-		return { data: match };
-	} catch {
-		return { error: 'Mock fixtures not found. Ensure tests/fixtures/sample-cf.json exists.' };
-	}
 }

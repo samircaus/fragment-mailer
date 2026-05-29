@@ -1,8 +1,17 @@
 // Pre-push validation for AJO export.
 
-import { fetchAuthorFragmentRawById, fetchAuthorModel } from '$lib/aem/author.js';
+import {
+	fetchAuthorFragmentRawById,
+	fetchAuthorFragmentTags,
+	fetchAuthorModelTags
+} from '$lib/aem/author.js';
 import type { AEMClientOptions } from '$lib/aem/client.js';
-import { isMockMode, type AppEnv } from '$lib/aem/env.js';
+import {
+	ajoEnabledTagFixHint,
+	extractModelTags,
+	modelHasAjoEnabledTag
+} from '$lib/aem/model-tags.js';
+import type { AppEnv } from '$lib/aem/env.js';
 import { hasUnresolvedLoadTags } from '$lib/render/ajo-load-tags.js';
 import type { RefResolutionError, ResolvedFragmentRef } from '$lib/render/ajo-ref-resolver.js';
 
@@ -22,6 +31,44 @@ export interface AjoExportValidationInput {
 	resolvedRefs: ResolvedFragmentRef[];
 	imsOrgId: string;
 	ajoSandboxName: string;
+}
+
+async function collectAjoTagsForRef(
+	ref: ResolvedFragmentRef,
+	fragment: { model?: { id?: string; title?: string }; path: string },
+	opts: AEMClientOptions,
+	env?: AppEnv
+): Promise<{ tags: string[]; sources: string[]; errors: string[] }> {
+	const tags = new Set<string>();
+	const sources: string[] = [];
+	const errors: string[] = [];
+
+	const modelId = ref.modelId || fragment.model?.id;
+	if (modelId) {
+		const modelTagsResult = await fetchAuthorModelTags(modelId, opts, env);
+		if (modelTagsResult.error) {
+			errors.push(`model tags: ${modelTagsResult.error}`);
+		} else if (modelTagsResult.data) {
+			const parsed = extractModelTags(modelTagsResult.data);
+			if (parsed.length) {
+				sources.push('model');
+				for (const t of parsed) tags.add(t);
+			}
+		}
+	}
+
+	const fragmentTagsResult = await fetchAuthorFragmentTags(ref.uuid, opts, env);
+	if (fragmentTagsResult.error) {
+		errors.push(`fragment tags: ${fragmentTagsResult.error}`);
+	} else if (fragmentTagsResult.data) {
+		const parsed = extractModelTags(fragmentTagsResult.data);
+		if (parsed.length) {
+			sources.push('fragment');
+			for (const t of parsed) tags.add(t);
+		}
+	}
+
+	return { tags: [...tags], sources, errors };
 }
 
 export async function validateAjoExport(
@@ -48,10 +95,6 @@ export async function validateAjoExport(
 		});
 	}
 
-	if (isMockMode(env)) {
-		return errors;
-	}
-
 	const requiredTag = `ajo-enabled:${input.imsOrgId}/${input.ajoSandboxName}`;
 
 	for (const ref of input.resolvedRefs) {
@@ -73,30 +116,22 @@ export async function validateAjoExport(
 			});
 		}
 
-		const modelId = ref.modelId || fragment.model?.id;
-		if (!modelId) {
-			errors.push({
-				code: 'missing_ajo_tag',
-				message: `Fragment "${ref.fragmentPath}" has no model id for AJO tag check.`
-			});
-			continue;
-		}
+		const { tags, sources, errors: tagErrors } = await collectAjoTagsForRef(ref, fragment, opts, env);
 
-		const modelResult = await fetchAuthorModel(modelId, opts, env);
-		if (modelResult.error || !modelResult.data) {
+		if (!modelHasAjoEnabledTag(tags, requiredTag)) {
+			const modelId = ref.modelId || fragment.model?.id;
 			errors.push({
 				code: 'missing_ajo_tag',
-				message: `Could not fetch model for ${ref.varName}: ${modelResult.error ?? 'unknown'}`
-			});
-			continue;
-		}
-
-		const tags = modelResult.data.tags ?? [];
-		if (!tags.includes(requiredTag)) {
-			errors.push({
-				code: 'missing_ajo_tag',
-				message: `Model for "${ref.varName}" is missing required tag "${requiredTag}".`,
-				details: tags.length ? [`model tags: ${tags.join(', ')}`] : ['model has no tags']
+				message: `Neither model nor fragment for "${ref.varName}" has required tag "${requiredTag}".`,
+				details: [
+					`fragment: ${fragment.path} (${ref.uuid})`,
+					modelId ? `model: ${fragment.model?.title ?? modelId} (${modelId})` : 'model: unknown',
+					tags.length
+						? `tags from AEM (${sources.join(' + ') || 'none'}): ${tags.join(', ')}`
+						: 'no tags returned from AEM /cf/models/{id}/tags or /cf/fragments/{id}/tags',
+					...tagErrors,
+					ajoEnabledTagFixHint(requiredTag, fragment.model?.title, modelId)
+				]
 			});
 		}
 	}

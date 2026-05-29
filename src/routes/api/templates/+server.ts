@@ -4,10 +4,10 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { z } from 'zod';
-import { listTemplates, createTemplate, loadTemplate } from '$lib/templates/registry.js';
+import { createTemplate, listTemplates, loadTemplate } from '$lib/templates/service.js';
 
-export const GET: RequestHandler = async () => {
-	return json({ templates: listTemplates() });
+export const GET: RequestHandler = async ({ platform }) => {
+	return json({ templates: await listTemplates(platform) });
 };
 
 const DEFAULT_MJML = `<mjml>
@@ -35,10 +35,13 @@ const DEFAULT_MJML = `<mjml>
 const CreateSchema = z.object({
 	id: z.string().min(1).regex(/^[a-z0-9-]+$/, 'ID must be lowercase letters, numbers, and hyphens'),
 	name: z.string().min(1),
-	mjml: z.string().optional()
+	mjml: z.string().optional(),
+	cfModel: z.string().optional(),
+	componentDefinition: z.record(z.string(), z.unknown()).optional(),
+	componentModels: z.array(z.record(z.string(), z.unknown())).optional()
 });
 
-export const POST: RequestHandler = async ({ request }) => {
+export const POST: RequestHandler = async ({ request, platform }) => {
 	let body: unknown;
 	try {
 		body = await request.json();
@@ -49,9 +52,16 @@ export const POST: RequestHandler = async ({ request }) => {
 	const parsed = CreateSchema.safeParse(body);
 	if (!parsed.success) throw error(400, `Invalid request: ${parsed.error.message}`);
 
-	const result = createTemplate(parsed.data.id, parsed.data.name, parsed.data.mjml ?? DEFAULT_MJML);
+	const result = await createTemplate(platform, {
+		id: parsed.data.id,
+		name: parsed.data.name,
+		mjml: parsed.data.mjml ?? DEFAULT_MJML,
+		cfModel: parsed.data.cfModel,
+		componentDefinition: parsed.data.componentDefinition as never,
+		componentModels: parsed.data.componentModels as never
+	});
 	if (result.error) throw error(409, result.error);
 
-	const templateResult = loadTemplate(parsed.data.id);
+	const templateResult = await loadTemplate(platform, parsed.data.id);
 	return json({ template: templateResult.data?.definition }, { status: 201 });
 };

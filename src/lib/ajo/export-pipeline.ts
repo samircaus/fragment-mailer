@@ -4,7 +4,7 @@ import {
 	fetchAuthorFragmentRawById,
 	fetchAuthorFragmentRawByPath
 } from '$lib/aem/author.js';
-import { aemClientOptions, authorHostUrl, isMockMode, publishHostRepoId, type AppEnv } from '$lib/aem/env.js';
+import { aemClientOptions, authorHostUrl, publishHostRepoId, type AppEnv } from '$lib/aem/env.js';
 import { compileMJML } from '$lib/render/mjml.js';
 import {
 	buildLetFragmentTag,
@@ -37,9 +37,6 @@ export interface AjoTransformInput {
 	imsOrgId: string;
 	ajoSandboxName: string;
 }
-
-const MOCK_CAMPAIGN_UUID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
-const MOCK_OFFER_UUID = '11111111-2222-3333-4444-555555555555';
 
 export async function transformTemplateForAjo(input: AjoTransformInput): Promise<AjoTransformResult> {
 	const env = input.env;
@@ -87,24 +84,22 @@ export async function transformTemplateForAjo(input: AjoTransformInput): Promise
 		};
 	}
 
-	const { resolved, errors: resolutionErrors } = isMockMode(env)
-		? mockResolveLoadTags(loadTags)
-		: await resolveLoadTagRefs(
-				loadTags.map((t) => ({ varName: t.varName, refExpression: t.refExpression })),
-				campaign,
-				opts,
-				env
-			);
+	const { resolved, errors: resolutionErrors } = await resolveLoadTagRefs(
+		loadTags.map((t) => ({ varName: t.varName, refExpression: t.refExpression })),
+		campaign,
+		opts,
+		env
+	);
 
-	const replacements = loadTags.map((tag) => {
+	const replacements = loadTags.flatMap((tag) => {
 		const match = resolved.find((r) => r.varName === tag.varName);
-		const uuid =
-			match?.uuid ??
-			(tag.refExpression === 'this' ? MOCK_CAMPAIGN_UUID : MOCK_OFFER_UUID);
-		return {
-			raw: tag.raw,
-			letTag: buildLetFragmentTag(tag.varName, uuid, repoId)
-		};
+		if (!match) return [];
+		return [
+			{
+				raw: tag.raw,
+				letTag: buildLetFragmentTag(tag.varName, match.uuid, repoId)
+			}
+		];
 	});
 
 	const transformedMjml = replaceLoadTags(preparedMjml, replacements);
@@ -164,17 +159,4 @@ async function loadCampaignFragment(
 
 	const r = await fetchAuthorFragmentRawByPath(path, authorOpts, env);
 	return r.data ?? null;
-}
-
-function mockResolveLoadTags(loadTags: ParsedLoadTag[]) {
-	return {
-		resolved: loadTags.map((tag, i) => ({
-			varName: tag.varName,
-			refExpression: tag.refExpression,
-			uuid: tag.refExpression === 'this' ? MOCK_CAMPAIGN_UUID : MOCK_OFFER_UUID,
-			modelId: `mock-model-${i}`,
-			fragmentPath: `/content/dam/mock/${tag.varName}`
-		})),
-		errors: [] as import('$lib/render/ajo-ref-resolver.js').RefResolutionError[]
-	};
 }

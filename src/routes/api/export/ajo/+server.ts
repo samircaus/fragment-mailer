@@ -8,18 +8,24 @@ import type { RequestHandler } from './$types';
 
 import { ajoSandboxName, type AppEnv } from '$lib/aem/env.js';
 import { getCampaignWithCF } from '$lib/campaigns/service.js';
-import { loadTemplate } from '$lib/templates/registry.js';
+import { loadTemplate } from '$lib/templates/service.js';
 import { resolveAppEnv } from '$lib/server/app-env.js';
 import { transformTemplateForAjo } from '$lib/ajo/export-pipeline.js';
 import { createContentTemplate, updateContentTemplate } from '$lib/ajo/client.js';
-import { getAjoTemplateId, setAjoTemplateId } from '$lib/ajo/campaign-templates.js';
+import {
+	getDb,
+	getRemoteTemplateId,
+	recordPushFailure,
+	statusScopeFromEnv,
+	upsertPushSuccess
+} from '$lib/db/email-status.js';
 import { isAjoConfigured } from '$lib/auth/ajo-token-provider.js';
 import { fetchAuthorFragmentRawById, fetchAuthorFragmentRawByPath } from '$lib/aem/author.js';
 import { aemClientOptions, authorHostUrl } from '$lib/aem/env.js';
 
 export const GET: RequestHandler = async ({ url, platform }) => {
 	const env = resolveAppEnv(platform?.env) as AppEnv | undefined;
-	return runAjoExport(url, env, { push: false });
+	return runAjoExport(url, env, { push: false }, platform);
 };
 
 export const POST: RequestHandler = async ({ url, request, platform }) => {
@@ -42,7 +48,7 @@ export const POST: RequestHandler = async ({ url, request, platform }) => {
 
 	const mjml = typeof body.mjml === 'string' ? body.mjml : undefined;
 
-	return runAjoExport(url, env, { push, templateName, ajoTemplateId, mjml });
+	return runAjoExport(url, env, { push, templateName, ajoTemplateId, mjml }, platform);
 };
 
 interface ExportOptions {
@@ -55,7 +61,8 @@ interface ExportOptions {
 async function runAjoExport(
 	url: URL,
 	env: AppEnv | undefined,
-	opts: ExportOptions
+	opts: ExportOptions,
+	platform?: App.Platform
 ) {
 	const campaignId = url.searchParams.get('campaignId');
 	if (!campaignId) {
@@ -70,7 +77,7 @@ async function runAjoExport(
 	}
 
 	const { campaign } = campaignResult.data;
-	const templateResult = loadTemplate(campaign.templateId);
+	const templateResult = await loadTemplate(platform, campaign.templateId);
 	if (templateResult.error || !templateResult.data) {
 		throw error(404, templateResult.error ?? 'Template not found');
 	}
@@ -141,7 +148,11 @@ async function runAjoExport(
 	}
 
 	const name = opts.templateName ?? campaign.name ?? campaignId;
-	const existingId = opts.ajoTemplateId ?? getAjoTemplateId(campaignId);
+	const db = getDb(platform);
+	const scope = statusScopeFromEnv(env);
+	const existingId =
+		opts.ajoTemplateId ??
+		(await getRemoteTemplateId(db, scope, campaign.cfUuid, campaignId));
 
 	const payload = {
 		name,
@@ -154,7 +165,22 @@ async function runAjoExport(
 		? await updateContentTemplate(existingId, payload, env as AppEnv)
 		: await createContentTemplate(payload, env as AppEnv);
 
+	const aemModifiedAt =
+		campaignResult.data.cf.version !== 'unknown'
+			? campaignResult.data.cf.version
+			: new Date().toISOString();
+
 	if (pushResult.error) {
+		if (campaign.cfUuid) {
+			await recordPushFailure(db, {
+				cfUuid: campaign.cfUuid,
+				campaignId,
+				scope,
+				error: pushResult.error,
+				remoteTemplateId: existingId,
+				aemModifiedAt
+			});
+		}
 		const status = pushResult.status && pushResult.status >= 400 ? pushResult.status : 502;
 		return json(
 			{
@@ -167,13 +193,21 @@ async function runAjoExport(
 		);
 	}
 
-	if (pushResult.data?.id) {
-		setAjoTemplateId(campaignId, pushResult.data.id);
+	const templateId = pushResult.data?.id;
+	if (templateId && campaign.cfUuid) {
+		await upsertPushSuccess(db, {
+			cfUuid: campaign.cfUuid,
+			campaignId,
+			scope,
+			remoteTemplateId: templateId,
+			aemModifiedAt,
+			content: transform.html
+		});
 	}
 
 	return json({
 		ok: true,
-		templateId: pushResult.data?.id,
+		templateId,
 		status: pushResult.data?.status,
 		html: transform.html,
 		repoId: transform.repoId

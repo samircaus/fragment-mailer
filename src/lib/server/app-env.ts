@@ -9,7 +9,6 @@ function pick(key: keyof AppEnv, platform?: AppEnv): string | undefined {
 
 export function resolveAppEnv(platform?: AppEnv): AppEnv | undefined {
 	const merged: AppEnv = {
-		MOCK_MODE: pick('MOCK_MODE', platform),
 		AEM_TIER: pick('AEM_TIER', platform),
 		AEM_BASE_URL: pick('AEM_BASE_URL', platform),
 		AEM_API_KEY: pick('AEM_API_KEY', platform),

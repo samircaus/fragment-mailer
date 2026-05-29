@@ -19,6 +19,7 @@ declare global {
 // Wrangler-generated bindings (run `npm run cf-typegen` to regenerate)
 interface Env {
 	ASSETS: Fetcher;
+	DB: D1Database;
 	// AEM connection
 	AEM_TIER: string;
 	AEM_BASE_URL: string;
@@ -43,8 +44,7 @@ interface Env {
 	AJO_IMS_CLIENT_SECRET: string;
 	AEM_AUTHOR_HOST: string;
 	AEM_PUBLISH_HOST: string;
-	// Feature flags
-	MOCK_MODE: string; // "true" | "false"
+	AEM_CF_EDITOR_TENANT: string;
 }
 
 export {};

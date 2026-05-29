@@ -9,8 +9,7 @@ import { z } from 'zod';
 import { fetchCF, normalizeCF } from '$lib/aem/client.js';
 import { aemClientOptions } from '$lib/aem/env.js';
 import type { CFFragment } from '$lib/aem/types.js';
-import { loadTemplate } from '$lib/templates/registry.js';
-import type { TemplateEntry } from '$lib/templates/registry.js';
+import { loadTemplate } from '$lib/templates/service.js';
 import { resolve } from '$lib/render/resolve.js';
 import { compileMJML } from '$lib/render/mjml.js';
 import {
@@ -20,7 +19,10 @@ import {
 	instrumentCFOutputTokens
 } from '$lib/render/inject-ue.js';
 import { buildUEBindings } from '$lib/render/ue-bindings.js';
-import { getPersona, flattenPersona } from '$lib/personas/samples.js';
+import { flattenPersona } from '$lib/personas/validate.js';
+import { getPersonaById } from '$lib/personas/service.js';
+import { resolveBrand } from '$lib/brands/service.js';
+import { buildStaticContext } from '$lib/preview/static-context.js';
 
 // Zod v4: z.record() requires both key and value schemas.
 const RenderRequestSchema = z.object({
@@ -29,7 +31,8 @@ const RenderRequestSchema = z.object({
 	cfPath: z.string(),
 	mode: z.enum(['preview', 'export']),
 	personaId: z.string().optional(),
-	companyName: z.string().optional()
+	brandId: z.string().optional(),
+	brandName: z.string().optional()
 });
 
 export const POST: RequestHandler = async ({ request, platform }) => {
@@ -48,14 +51,14 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 		throw error(400, `Invalid request: ${parsed.error.message}`);
 	}
 
-	const { templateId, cfPath, mode, personaId, companyName } = parsed.data;
+	const { templateId, cfPath, mode, personaId, brandId, brandName } = parsed.data;
 
 	// Load template
-	const templateResult = loadTemplate(templateId);
+	const templateResult = await loadTemplate(platform, templateId);
 	if (templateResult.error) {
 		throw error(404, templateResult.error);
 	}
-	const { definition, mjml } = templateResult.data as TemplateEntry;
+	const { definition, mjml } = templateResult.data!;
 
 	// Fetch CF
 	const cfResult = await fetchCF(cfPath, aemOpts);
@@ -65,14 +68,15 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 	const cf = normalizeCF(cfResult.data as CFFragment);
 
 	// Build render context
-	const persona = getPersona(personaId ?? 'persona-1');
+	const persona = await getPersonaById(platform, personaId ?? 'persona-1');
+	const brand = await resolveBrand(platform, { brandId, brandName });
 	const profileData = flattenPersona(persona);
 
 	const context = {
 		cf: buildCFContext(cf.fields, aemOpts.baseUrl),
 		profile: profileData,
 		preserveProfile: mode === 'export',
-		static: buildStaticContext(normalizeCompanyName(companyName))
+		static: buildStaticContext(brand)
 	};
 
 	// Instrument {{cf.*}} output tokens so UE can map editable spans.
@@ -111,21 +115,6 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 		renderedAt: new Date().toISOString()
 	});
 };
-
-function buildStaticContext(companyName: string): Record<string, unknown> {
-	return {
-		year: new Date().getFullYear(),
-		companyName,
-		logoUrl: 'https://via.placeholder.com/120x40?text=Logo',
-		unsubscribeUrl: '{{static.unsubscribeUrl}}',
-		privacyUrl: 'https://example.com/privacy'
-	};
-}
-
-function normalizeCompanyName(raw?: string): string {
-	const trimmed = raw?.trim();
-	return trimmed ? trimmed.slice(0, 120) : 'Acme Corp';
-}
 
 function buildCFContext(
 	fields: Record<string, unknown>,

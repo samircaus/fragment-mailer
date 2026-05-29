@@ -1,6 +1,10 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { transformTemplateForAjo } from '../src/lib/ajo/export-pipeline.js';
 import type { AuthorFragment } from '../src/lib/types/aem.js';
+
+vi.mock('$lib/ajo/validate.js', () => ({
+	validateAjoExport: vi.fn().mockResolvedValue([])
+}));
 
 const mockCampaign: AuthorFragment = {
 	id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
@@ -40,7 +44,7 @@ const mockCampaign: AuthorFragment = {
 };
 
 describe('transformTemplateForAjo', () => {
-	it('rewrites load tags and compiles HTML in mock mode', async () => {
+	it('rewrites load tags and compiles HTML', async () => {
 		const mjml = `<mjml><mj-body>
 {% load cf as fragment ref='this' %}
 {% load featuredOffer as fragment ref='this.featuredOffer' %}
@@ -54,7 +58,11 @@ describe('transformTemplateForAjo', () => {
 			mjml,
 			campaignId: 'test-campaign',
 			campaignFragment: mockCampaign,
-			env: { MOCK_MODE: 'true', IMS_ORG_ID: 'org@AdobeOrg', AJO_SANDBOX: 'prod' },
+			env: {
+				IMS_ORG_ID: 'org@AdobeOrg',
+				AJO_SANDBOX: 'prod',
+				AEM_PUBLISH_HOST: 'https://publish.example.com'
+			},
 			imsOrgId: 'org@AdobeOrg',
 			ajoSandboxName: 'prod'
 		});

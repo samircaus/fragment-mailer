@@ -7,8 +7,8 @@
 import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 
-import { loadTemplate } from '$lib/templates/registry.js';
-import type { TemplateEntry, TemplateDefinition } from '$lib/templates/registry.js';
+import { loadTemplate } from '$lib/templates/service.js';
+import type { TemplateDefinition } from '$lib/templates/types.js';
 import { resolve } from '$lib/render/resolve.js';
 import { compileMJML } from '$lib/render/mjml.js';
 import {
@@ -20,7 +20,10 @@ import {
 } from '$lib/render/inject-ue.js';
 import { buildUEBindings } from '$lib/render/ue-bindings.js';
 import { validate } from '$lib/render/validate.js';
-import { flattenPersona, resolvePreviewPersona } from '$lib/personas/samples.js';
+import { flattenPersona, resolvePreviewPersona } from '$lib/personas/validate.js';
+import { getPersonaById } from '$lib/personas/service.js';
+import { resolveBrand } from '$lib/brands/service.js';
+import { buildStaticContext } from '$lib/preview/static-context.js';
 import { getCampaignWithCF } from '$lib/campaigns/service.js';
 import { resolveAppEnv } from '$lib/server/app-env.js';
 
@@ -30,7 +33,8 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
 	const { campaignId } = params;
 	const personaId = url.searchParams.get('personaId') ?? 'persona-1';
 	const personaJson = url.searchParams.get('persona');
-	const companyName = normalizeCompanyName(url.searchParams.get('companyName'));
+	const brandId = url.searchParams.get('brandId');
+	const brandName = url.searchParams.get('brandName');
 
 	const campaignResult = await getCampaignWithCF(campaignId, env);
 	if (campaignResult.error || !campaignResult.data) {
@@ -43,24 +47,27 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
 	const templateId = url.searchParams.get('templateId') ?? campaign.templateId ?? 'promo';
 
 	// Load template
-	const templateResult = loadTemplate(templateId);
+	const templateResult = await loadTemplate(platform, templateId);
 	if (templateResult.error) {
 		throw error(404, templateResult.error);
 	}
-	const { definition, mjml } = templateResult.data as TemplateEntry;
+	const { definition, mjml } = templateResult.data!;
 
 	// Resolve referenced CFs (for the featured offer block, etc.)
 	const cfContext = buildCFContext(cf.fields, definition, env?.AEM_BASE_URL);
 
 	// Build render context
-	const persona = resolvePreviewPersona(personaId, personaJson);
+	const persona = personaJson
+		? resolvePreviewPersona(personaId, personaJson)
+		: await getPersonaById(platform, personaId);
+	const brand = await resolveBrand(platform, { brandId, brandName });
 	const flatProfile = flattenPersona(persona);
 
 	const context = {
 		cf: cfContext,
 		profile: flatProfile,
 		preserveProfile: false, // preview mode: resolve profile tokens from persona
-		static: buildStaticContext(companyName)
+		static: buildStaticContext(brand)
 	};
 
 	// Instrument {{cf.*}} output tokens first, then resolve values.
@@ -90,7 +97,11 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
 	html = injectUEHead(
 		html,
 		env?.AEM_BASE_URL ?? 'https://author-p00000-e00000.adobeaemcloud.com',
-		url.toString()
+		url.toString(),
+		{
+			componentDefinitionUrl: `/api/templates/${encodeURIComponent(templateId)}/component-definition`,
+			componentModelsUrl: `/api/templates/${encodeURIComponent(templateId)}/component-models`
+		}
 	);
 
 	// Run validation and inject warning markers as HTML comments
@@ -142,19 +153,3 @@ function buildCFContext(
 
 	return context;
 }
-
-function buildStaticContext(companyName: string): Record<string, unknown> {
-	return {
-		year: new Date().getFullYear(),
-		companyName,
-		logoUrl: 'https://via.placeholder.com/120x40?text=Logo',
-		unsubscribeUrl: '{{static.unsubscribeUrl}}',
-		privacyUrl: 'https://example.com/privacy'
-	};
-}
-
-function normalizeCompanyName(raw: string | null): string {
-	const trimmed = raw?.trim();
-	return trimmed ? trimmed.slice(0, 120) : 'Acme Corp';
-}
-

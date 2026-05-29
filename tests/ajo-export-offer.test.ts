@@ -1,9 +1,13 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import offerDefinition from '../src/lib/templates/files/offer.template.json';
 import offerMJML from '../src/lib/templates/files/offer.mjml?raw';
 import { transformTemplateForAjo } from '../src/lib/ajo/export-pipeline.js';
 import type { TemplateDefinition } from '../src/lib/templates/registry.js';
 import type { AuthorFragment } from '../src/lib/types/aem.js';
+
+vi.mock('$lib/ajo/validate.js', () => ({
+	validateAjoExport: vi.fn().mockResolvedValue([])
+}));
 
 const offerDef = offerDefinition as TemplateDefinition;
 
@@ -27,7 +31,11 @@ describe('transformTemplateForAjo — offer template without manual load tags', 
 			campaignId: 'test-offer',
 			campaignFragment: mockOfferCampaign,
 			templateDefinition: offerDef,
-			env: { MOCK_MODE: 'true', IMS_ORG_ID: 'org@AdobeOrg', AJO_SANDBOX: 'prod' },
+			env: {
+				IMS_ORG_ID: 'org@AdobeOrg',
+				AJO_SANDBOX: 'prod',
+				AEM_PUBLISH_HOST: 'https://publish.example.com'
+			},
 			imsOrgId: 'org@AdobeOrg',
 			ajoSandboxName: 'prod'
 		});

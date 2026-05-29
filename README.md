@@ -37,26 +37,18 @@ Fragment Mailer is a POC tool that sits between AEM (content source) and AJO (se
 # Install dependencies
 npm install
 
-# Copy env template (mock mode is on by default)
+# Copy env template and add AEM / IMS credentials
 cp .env.example .dev.vars
 
-# Start dev server
+# Start dev server (use wrangler for D1 bindings)
 npm run dev
 ```
 
-Open [http://localhost:5173](http://localhost:5173).
+Open [http://localhost:5173](http://localhost:5173). Campaigns load from AEM Author (`AEM_TIER=author`) or Publish per `.dev.vars`.
 
-With `MOCK_MODE=true` (the default in `.dev.vars`), the app uses fixtures from `tests/fixtures/` and does not call AEM or AJO. Any contributor can run it without Adobe credentials.
+**Preview a campaign:** `/preview/{campaign-slug}`
 
-**Preview a campaign:**
-```
-http://localhost:5173/preview/mock-campaign-1
-```
-
-**Open the editor:**
-```
-http://localhost:5173/editor/mock-campaign-1
-```
+**Open the editor:** `/editor/{campaign-slug}`
 
 ### Running tests
 
@@ -236,6 +228,6 @@ Point UE at `https://<this-app-origin>/ue/<fragmentId>` as the preview URL.
 
 **Dev environment**: Uses standard `mjml` v5 (async API — `compileMJML` is `async`). Works fine locally and in Vite SSR.
 
-**Workers environment**: `mjml-browser` v5.2.2 was tested and found to return empty objects (broken release). Standard `mjml` v5 is async and does not call `fs` at compile time, so it _should_ work with `nodejs_compat` on Workers. **This needs a smoke test in a real Workers environment before production** — add a `wrangler dev` test that hits `/preview/mock-campaign-1` on a deployed Worker.
+**Workers environment**: `mjml-browser` v5.2.2 was tested and found to return empty objects (broken release). Standard `mjml` v5 is async and does not call `fs` at compile time, so it _should_ work with `nodejs_compat` on Workers. **This needs a smoke test in a real Workers environment before production** — hit `/preview/{campaign-slug}` on a deployed Worker with real AEM credentials.
 
 Files: `src/lib/render/mjml.ts`, `package.json`.

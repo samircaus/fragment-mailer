@@ -163,6 +163,45 @@ export async function fetchAuthorModel(
 	return { data: (await res.json()) as AuthorModel & { tags?: string[] } };
 }
 
+/** Tags applied to a CF model (GET /cf/models/{id}/tags). */
+export async function fetchAuthorModelTags(
+	modelId: string,
+	opts: AEMClientOptions,
+	env?: AppEnv
+): Promise<Result<Record<string, unknown>>> {
+	return fetchAuthorTagsResource(`${sitesCfBase(opts)}/models/${encodeURIComponent(modelId)}/tags`, modelId, env);
+}
+
+/** Tags applied to a CF instance (GET /cf/fragments/{id}/tags). */
+export async function fetchAuthorFragmentTags(
+	fragmentId: string,
+	opts: AEMClientOptions,
+	env?: AppEnv
+): Promise<Result<Record<string, unknown>>> {
+	return fetchAuthorTagsResource(
+		`${sitesCfBase(opts)}/fragments/${encodeURIComponent(fragmentId)}/tags`,
+		fragmentId,
+		env
+	);
+}
+
+async function fetchAuthorTagsResource(
+	url: string,
+	resourceId: string,
+	env?: AppEnv
+): Promise<Result<Record<string, unknown>>> {
+	const res = await fetch(url, { headers: await authorHeaders(env) });
+	if (res.status === 404) {
+		return { data: { items: [] } };
+	}
+	if (!res.ok) {
+		const snippet = await readResponseSnippet(res);
+		return { error: `AEM Author tags fetch failed ${res.status} for ${resourceId}. Body: ${snippet}` };
+	}
+	const body = (await res.json()) as Record<string, unknown>;
+	return { data: body };
+}
+
 function extractAuthorList(body: AuthorFragmentList | AuthorFragment[]): AuthorFragment[] {
 	if (Array.isArray(body)) return body;
 	if (body?.items && Array.isArray(body.items)) return body.items;

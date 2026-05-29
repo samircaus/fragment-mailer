@@ -28,9 +28,6 @@ export async function listCampaignFragments(
 	env?: AppEnv
 ): Promise<Result<ContentFragmentItem[]>> {
 	const opts = aemClientOptions(env);
-	if (opts.mockMode) {
-		return listContentFragments(campaignsFolder(env), opts);
-	}
 
 	if (aemTier(env) === 'author') {
 		return listAuthorFragments(campaignsFolder(env), opts, env);
@@ -57,9 +54,6 @@ export async function fetchCampaignFragmentAtPath(
 	env?: AppEnv
 ): Promise<Result<CFFragment>> {
 	const opts = aemClientOptions(env);
-	if (opts.mockMode) {
-		return fetchCF(path, opts);
-	}
 
 	if (aemTier(env) === 'author') {
 		return fetchAuthorFragmentByPath(path, opts, env);
@@ -78,9 +72,6 @@ export async function fetchCampaignFragmentById(
 	env?: AppEnv
 ): Promise<Result<CFFragment>> {
 	const opts = aemClientOptions(env);
-	if (opts.mockMode) {
-		return fetchCFById(id, opts);
-	}
 
 	if (aemTier(env) === 'author') {
 		return fetchAuthorFragmentById(id, opts, env);
