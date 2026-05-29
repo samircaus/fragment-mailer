@@ -17,8 +17,6 @@ import { compileMJML } from '$lib/render/mjml.js';
 import { rewriteCfRefsForAjo, wrapAjoControlTagsForMjml } from '$lib/render/ajo-export.js';
 import { flattenPersona } from '$lib/personas/validate.js';
 import { getPersonaById } from '$lib/personas/service.js';
-import { resolveBrand } from '$lib/brands/service.js';
-import { buildStaticContext } from '$lib/preview/static-context.js';
 import { buildManifest } from '$lib/manifest/builder.js';
 import { getCampaignWithCF } from '$lib/campaigns/service.js';
 
@@ -27,8 +25,6 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 
 	const campaignId = url.searchParams.get('campaignId');
 	const personaId = url.searchParams.get('personaId') ?? 'persona-1';
-	const brandId = url.searchParams.get('brandId');
-	const brandName = url.searchParams.get('brandName');
 	const cfMode = parseCfMode(url.searchParams.get('cfMode'));
 
 	if (!campaignId) {
@@ -56,14 +52,13 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 
 	// Build context — preserve profile tokens for AJO send-time resolution
 	const persona = await getPersonaById(platform, personaId);
-	const brand = await resolveBrand(platform, { brandId, brandName });
 	const flatProfile = flattenPersona(persona);
 
 	const context = {
 		cf: buildCFContext(primaryCF.fields, referencedCFs),
 		profile: flatProfile,
-		preserveProfile: true, // export mode: profile tokens pass through to AJO
-		static: buildStaticContext(brand)
+		preserveProfile: true,
+		static: { year: new Date().getFullYear() }
 	};
 
 	// Resolve + compile

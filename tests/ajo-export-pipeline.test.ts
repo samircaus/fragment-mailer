@@ -72,7 +72,7 @@ describe('transformTemplateForAjo', () => {
 		expect(result.html).toContain('aem:11111111-2222-3333-4444-555555555555');
 		expect(result.html).not.toMatch(/\{%\s*load\b/);
 
-		const firstLet = result.html.indexOf('{% let cf = fragment');
+		const firstLet = result.html.indexOf("{{fragment id='aem:");
 		const firstCfToken = result.html.indexOf('{{ cf.heroHeadline }}');
 		expect(firstLet).toBeGreaterThan(-1);
 		expect(firstCfToken).toBeGreaterThan(-1);

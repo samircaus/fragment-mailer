@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import {
 	deriveSyncStatus,
 	rowToEmailStatusInfo,
@@ -55,5 +55,51 @@ describe('hashContent', () => {
 		const b = await hashContent('<html>test</html>');
 		expect(a).toBe(b);
 		expect(a).toHaveLength(64);
+	});
+});
+
+describe('clearRemoteTemplateLink', () => {
+	const scope = { imsOrgId: 'org@AdobeOrg', ajoSandbox: 'prod' };
+
+	beforeEach(async () => {
+		const { clearEmailStatusMemoryStore, upsertPushSuccess } = await import(
+			'../src/lib/db/email-status.js'
+		);
+		clearEmailStatusMemoryStore();
+		await upsertPushSuccess(undefined, {
+			cfUuid: 'uuid-1',
+			campaignId: 'campaign-1',
+			scope,
+			remoteTemplateId: 'tmpl-123',
+			aemModifiedAt: '2025-03-01T09:00:00.000Z',
+			content: '<html>test</html>'
+		});
+	});
+
+	it('clears remote template id and returns never_pushed', async () => {
+		const { clearRemoteTemplateLink, getEmailStatus, clearEmailStatusMemoryStore } = await import(
+			'../src/lib/db/email-status.js'
+		);
+
+		const cleared = await clearRemoteTemplateLink(undefined, scope, 'uuid-1');
+		expect(cleared).toBe(true);
+
+		const row = await getEmailStatus(undefined, scope, 'uuid-1');
+		expect(row?.remoteTemplateId).toBeNull();
+		expect(deriveSyncStatus(row, '2025-03-01T10:00:00.000Z')).toBe('never_pushed');
+
+		clearEmailStatusMemoryStore();
+	});
+
+	it('returns false when no link exists', async () => {
+		const { clearRemoteTemplateLink, clearEmailStatusMemoryStore } = await import(
+			'../src/lib/db/email-status.js'
+		);
+
+		await clearRemoteTemplateLink(undefined, scope, 'uuid-1');
+		const clearedAgain = await clearRemoteTemplateLink(undefined, scope, 'uuid-1');
+		expect(clearedAgain).toBe(false);
+
+		clearEmailStatusMemoryStore();
 	});
 });

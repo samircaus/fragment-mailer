@@ -24,7 +24,7 @@ describe('normalizeCF', () => {
 		const normalized = normalizeCF(fragment);
 
 		expect(normalized.fields.title).toBe('Persoenliche Beratung');
-		expect(normalized.fields.emailCopy).toEqual({ html: '<p>Example</p>' });
+		expect(normalized.fields.emailCopy).toBe('<p>Example</p>');
 		expect(normalized.fields.emailCopyHtml).toBe('<p>Example</p>');
 		expect(normalized.fields.id).toBeUndefined();
 	});
@@ -47,7 +47,9 @@ describe('normalizeCF', () => {
 
 		const normalized = normalizeCF(fragment);
 
+		expect(normalized.fields.emailCopy).toBe('<p>String HTML</p>');
 		expect(normalized.fields.emailCopyHtml).toBe('<p>String HTML</p>');
+		expect(normalized.fields.bannerImage).toBe('/content/dam/wknd-shared/en/example.jpg');
 		expect(normalized.fields.bannerImageUrl).toBe('/content/dam/wknd-shared/en/example.jpg');
 	});
 });

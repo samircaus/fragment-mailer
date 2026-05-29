@@ -7,32 +7,26 @@
     "title": {
       "type": "text",
       "required": true,
-      "binding": "cf.title",
       "modelId": "offer-title"
     },
     "bannerImage": {
       "type": "reference",
       "model": "Image",
-      "required": false,
-      "binding": "cf.bannerImage"
+      "required": false
     },
     "emailCopy": {
       "type": "richtext",
       "required": true,
-      "binding": "cf.emailCopy",
-      "renderBinding": "cf.emailCopyHtml",
       "modelId": "offer-email-copy"
     },
     "ctaLabel": {
       "type": "text",
       "required": false,
-      "binding": "cf.ctaLabel",
       "modelId": "offer-cta"
     },
     "ctaLink": {
       "type": "url",
       "required": false,
-      "binding": "cf.ctaLink",
       "modelId": "offer-cta"
     }
   },

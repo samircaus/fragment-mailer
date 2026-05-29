@@ -96,6 +96,16 @@ export async function listTemplatePickerItems(
 	}));
 }
 
+export async function listStandaloneTemplatePickerItems(
+	platform?: App.Platform
+): Promise<TemplatePickerItem[]> {
+	const items = await listTemplatePickerItems(platform);
+	return items.filter(
+		(item) =>
+			!item.isBuiltin && (item.id.startsWith('ajo-') || item.familyId.startsWith('ajo-'))
+	);
+}
+
 export async function deleteTemplateVersion(
 	platform: App.Platform | undefined,
 	id: string

@@ -7,38 +7,32 @@
     "heroHeadline": {
       "type": "text",
       "required": true,
-      "binding": "cf.heroHeadline",
       "modelId": "hero"
     },
     "subtitle": {
       "type": "text",
       "required": false,
-      "binding": "cf.subtitle",
       "modelId": "hero"
     },
     "bodyCopy": {
       "type": "richtext",
       "required": true,
-      "binding": "cf.bodyCopy",
       "modelId": "promo-body"
     },
     "ctaText": {
       "type": "text",
       "required": true,
-      "binding": "cf.ctaText",
       "modelId": "promo-cta"
     },
     "ctaUrl": {
       "type": "url",
       "required": true,
-      "binding": "cf.ctaUrl",
       "modelId": "promo-cta"
     },
     "featuredOffer": {
       "type": "reference",
       "model": "Offer",
-      "required": false,
-      "binding": "cf.featuredOffer"
+      "required": false
     }
   },
   "profileTokens": ["profile.person.name.firstName"],

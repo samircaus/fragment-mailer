@@ -32,6 +32,15 @@ describe('resolve — simple tokens', () => {
 		expect(html).toBe('Hello Spring into Savings');
 	});
 
+	it('resolves triple-brace cf tokens (AJO unescaped HTML)', () => {
+		const ctx: RenderContext = {
+			...BASE_CONTEXT,
+			cf: { ...BASE_CONTEXT.cf, emailCopy: '<p>Hello</p>' }
+		};
+		const { html } = resolve('<div>{{{cf.emailCopy}}}</div>', ctx);
+		expect(html).toBe('<div><p>Hello</p></div>');
+	});
+
 	it('resolves a nested cf token (referenced CF)', () => {
 		const { html } = resolve('Offer: {{cf.featuredOffer.headline}}', BASE_CONTEXT);
 		expect(html).toBe('Offer: Bundle Deal');

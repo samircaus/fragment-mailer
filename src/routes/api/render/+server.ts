@@ -21,8 +21,8 @@ import {
 import { buildUEBindings } from '$lib/render/ue-bindings.js';
 import { flattenPersona } from '$lib/personas/validate.js';
 import { getPersonaById } from '$lib/personas/service.js';
-import { resolveBrand } from '$lib/brands/service.js';
-import { buildStaticContext } from '$lib/preview/static-context.js';
+import { applyPreviewFragments } from '$lib/fragments/preview.js';
+import { resolveAppEnv } from '$lib/server/app-env.js';
 
 // Zod v4: z.record() requires both key and value schemas.
 const RenderRequestSchema = z.object({
@@ -30,9 +30,7 @@ const RenderRequestSchema = z.object({
 	templateId: z.string(),
 	cfPath: z.string(),
 	mode: z.enum(['preview', 'export']),
-	personaId: z.string().optional(),
-	brandId: z.string().optional(),
-	brandName: z.string().optional()
+	personaId: z.string().optional()
 });
 
 export const POST: RequestHandler = async ({ request, platform }) => {
@@ -51,7 +49,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 		throw error(400, `Invalid request: ${parsed.error.message}`);
 	}
 
-	const { templateId, cfPath, mode, personaId, brandId, brandName } = parsed.data;
+	const { templateId, cfPath, mode, personaId } = parsed.data;
 
 	// Load template
 	const templateResult = await loadTemplate(platform, templateId);
@@ -69,19 +67,22 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 
 	// Build render context
 	const persona = await getPersonaById(platform, personaId ?? 'persona-1');
-	const brand = await resolveBrand(platform, { brandId, brandName });
 	const profileData = flattenPersona(persona);
+	const appEnv = resolveAppEnv(env);
 
 	const context = {
 		cf: buildCFContext(cf.fields, aemOpts.baseUrl),
 		profile: profileData,
 		preserveProfile: mode === 'export',
-		static: buildStaticContext(brand)
+		static: { year: new Date().getFullYear() }
 	};
 
+	const mjmlWithFragments =
+		mode === 'preview' ? await applyPreviewFragments(mjml, appEnv) : mjml;
+
 	// Instrument {{cf.*}} output tokens so UE can map editable spans.
-	const instrumentedMJML = instrumentCFOutputTokens(mjml);
-	const discoveredBindings = collectCFOutputBindings(mjml);
+	const instrumentedMJML = instrumentCFOutputTokens(mjmlWithFragments);
+	const discoveredBindings = collectCFOutputBindings(mjmlWithFragments);
 
 	// Resolve tokens
 	const { html: resolvedMJML, warnings } = resolve(instrumentedMJML, context);
@@ -123,7 +124,9 @@ function buildCFContext(
 	const context: Record<string, unknown> = { ...fields };
 	const imageUrl = context.bannerImageUrl;
 	if (typeof imageUrl === 'string' && imageUrl.startsWith('/') && assetBaseUrl) {
-		context.bannerImageUrl = `${assetBaseUrl.replace(/\/$/, '')}${imageUrl}`;
+		const absolute = `${assetBaseUrl.replace(/\/$/, '')}${imageUrl}`;
+		context.bannerImageUrl = absolute;
+		context.bannerImage = absolute;
 	}
 	return context;
 }

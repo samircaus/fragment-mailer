@@ -55,7 +55,7 @@ export function stripLoadTags(template: string, loadTagRaws: string[]): string {
 }
 
 export function buildLetFragmentTag(varName: string, uuid: string, repoId: string): string {
-	return `{% let ${varName} = fragment(id="aem:${uuid}?repoId=${repoId}") %}`;
+	return `{{fragment id='aem:${uuid}?repoId=${repoId}' result='${varName}'}}`;
 }
 
 /** Insert all {% let %} fragment bindings immediately after <body> so preheader tokens are in scope. */

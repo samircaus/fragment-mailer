@@ -130,14 +130,23 @@ function findIfBlockBounds(
 }
 
 function resolveOutputTokens(input: string, state: EvalState): string {
-	const OUTPUT_RE = /\{\{\s*([\s\S]*?)\s*\}\}/g;
-	return input.replace(OUTPUT_RE, (full, expr: string) => {
-		const { value, preserve } = evaluateExpression(expr.trim(), state, true);
-		if (preserve) return full;
-		if (value === undefined) return full;
-		if (value === null) return '';
-		return String(value);
-	});
+	const TRIPLE_OUTPUT_RE = /\{\{\{\s*([\s\S]*?)\s*\}\}\}/g;
+	const DOUBLE_OUTPUT_RE = /\{\{\s*([\s\S]*?)\s*\}\}/g;
+
+	const withTriple = input.replace(TRIPLE_OUTPUT_RE, (full, expr: string) =>
+		resolveOutputExpression(expr.trim(), state, full)
+	);
+	return withTriple.replace(DOUBLE_OUTPUT_RE, (full, expr: string) =>
+		resolveOutputExpression(expr.trim(), state, full)
+	);
+}
+
+function resolveOutputExpression(expr: string, state: EvalState, full: string): string {
+	const { value, preserve } = evaluateExpression(expr, state, true);
+	if (preserve) return full;
+	if (value === undefined) return full;
+	if (value === null) return '';
+	return String(value);
 }
 
 function evaluateCondition(expr: string, state: EvalState): boolean {

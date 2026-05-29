@@ -94,6 +94,8 @@ export async function getRouteAuthLevel(
 	const appRoute =
 		pathname === '/' ||
 		pathname.startsWith('/editor/') ||
+		pathname.startsWith('/templates/') ||
+		pathname.startsWith('/fragments/') ||
 		pathname.startsWith('/preview/') ||
 		pathname.startsWith('/api/');
 
@@ -101,6 +103,15 @@ export async function getRouteAuthLevel(
 
 	if (pathname === '/api/export/ajo' && method === 'POST') {
 		if (url.searchParams.get('push') === 'true') return 'strict';
+		try {
+			const body = (await request.clone().json()) as { push?: boolean };
+			if (body.push === true) return 'strict';
+		} catch {
+			// empty or non-JSON body
+		}
+	}
+
+	if (pathname === '/api/export/ajo/standalone' && method === 'POST') {
 		try {
 			const body = (await request.clone().json()) as { push?: boolean };
 			if (body.push === true) return 'strict';

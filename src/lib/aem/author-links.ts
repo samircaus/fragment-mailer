@@ -46,6 +46,27 @@ export function cfExperienceCloudEditorUrl(
 }
 
 /**
+ * CF console browse view for a DAM folder (create / open fragments in folder).
+ * Example:
+ *   https://experience.adobe.com/?repo=author-p125048-e1847106.adobeaemcloud.com#/@psc/aem/cf/editor/browse/content/dam/email/en/campaigns
+ */
+export function cfExperienceCloudBrowseUrl(
+	damFolderPath: string,
+	authorBaseUrl: string | null | undefined,
+	tenantSlug: string = DEFAULT_EXP_TENANT
+): string | null {
+	if (!damFolderPath?.trim() || !authorBaseUrl?.trim()) return null;
+
+	const path = damFolderPath.trim().replace(/\/$/, '');
+	if (!path.startsWith('/content/')) return null;
+
+	const repo = authorRepoHost(authorBaseUrl);
+	const tenant = tenantSlug.trim() || DEFAULT_EXP_TENANT;
+
+	return `https://experience.adobe.com/?repo=${encodeURIComponent(repo)}#/@${encodeURIComponent(tenant)}/aem/cf/editor/browse${path}`;
+}
+
+/**
  * Universal Editor canvas URL for in-context email preview editing.
  * Uses the current app host so dev/staging/prod each open the matching deployment.
  *

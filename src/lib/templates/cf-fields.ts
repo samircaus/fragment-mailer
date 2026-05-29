@@ -7,6 +7,14 @@ import type {
 	TemplateFieldDefinition
 } from '$lib/templates/types.js';
 
+/** Default MJML/AJO token for a template field (`cf.${fieldId}`). */
+export function resolveCfBinding(
+	fieldId: string,
+	fieldDef?: Pick<TemplateFieldDefinition, 'binding'>
+): string {
+	return fieldDef?.binding ?? `cf.${fieldId}`;
+}
+
 export interface TemplateFieldMappingRow {
 	fieldId: string;
 	cfBinding: string;
@@ -51,7 +59,7 @@ export function buildFieldMappings(
 
 		return {
 			fieldId,
-			cfBinding: fieldDef.binding,
+			cfBinding: resolveCfBinding(fieldId, fieldDef),
 			renderBinding: fieldDef.renderBinding,
 			ueProp,
 			modelId: fieldDef.modelId,
@@ -118,14 +126,11 @@ export function syncTemplateFromAemModel(input: SyncTemplateFromAemInput): SyncT
 		const fieldId = aemField.name;
 		const modelId = `${slugId(templateId)}-${slugId(fieldId)}`;
 		const templateType = aemFieldToTemplateType(aemField.type);
-		const binding = `cf.${fieldId}`;
 
 		fields[fieldId] = {
 			type: templateType,
 			required: aemField.required,
-			binding,
-			modelId,
-			...(templateType === 'richtext' ? { renderBinding: `cf.${fieldId}Html` } : {})
+			modelId
 		};
 
 		componentModels.push({

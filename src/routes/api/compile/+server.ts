@@ -12,8 +12,7 @@ import { resolve } from '$lib/render/resolve.js';
 import { compileMJML } from '$lib/render/mjml.js';
 import { instrumentCFOutputTokens } from '$lib/render/inject-ue.js';
 import { flattenPersona, resolvePreviewPersona } from '$lib/personas/validate.js';
-import { resolveBrand } from '$lib/brands/service.js';
-import { buildStaticContext } from '$lib/preview/static-context.js';
+import { applyPreviewFragments } from '$lib/fragments/preview.js';
 import { resolveAppEnv } from '$lib/server/app-env.js';
 
 const CompileRequestSchema = z.object({
@@ -21,8 +20,6 @@ const CompileRequestSchema = z.object({
 	campaignId: z.string(),
 	templateId: z.string(),
 	personaId: z.string().optional(),
-	brandId: z.string().optional(),
-	brandName: z.string().optional(),
 	persona: z.unknown().optional()
 });
 
@@ -41,7 +38,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 		throw error(400, `Invalid request: ${parsed.error.message}`);
 	}
 
-	const { mjml, campaignId, templateId, personaId, brandId, brandName, persona } = parsed.data;
+	const { mjml, campaignId, templateId, personaId, persona } = parsed.data;
 
 	const campaignResult = await getCampaignWithCF(campaignId, env);
 	if (campaignResult.error || !campaignResult.data) {
@@ -63,16 +60,16 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 		personaId ?? 'persona-1',
 		persona != null && typeof persona === 'object' ? JSON.stringify(persona) : null
 	);
-	const brand = await resolveBrand(platform, { brandId, brandName });
 
 	const context = {
 		cf: cfContext,
 		profile: flattenPersona(resolvedPersona),
 		preserveProfile: false,
-		static: buildStaticContext(brand)
+		static: { year: new Date().getFullYear() }
 	};
 
-	const instrumentedMJML = instrumentCFOutputTokens(mjml);
+	const mjmlWithFragments = await applyPreviewFragments(mjml, env);
+	const instrumentedMJML = instrumentCFOutputTokens(mjmlWithFragments);
 	const { html: resolvedMJML, warnings } = resolve(instrumentedMJML, context);
 
 	const compileResult = await compileMJML(resolvedMJML, { beautify: true });
@@ -107,7 +104,9 @@ function buildCFContext(
 
 	const imageUrl = context.bannerImageUrl;
 	if (typeof imageUrl === 'string' && imageUrl.startsWith('/') && assetBaseUrl) {
-		context.bannerImageUrl = `${assetBaseUrl.replace(/\/$/, '')}${imageUrl}`;
+		const absolute = `${assetBaseUrl.replace(/\/$/, '')}${imageUrl}`;
+		context.bannerImageUrl = absolute;
+		context.bannerImage = absolute;
 	}
 
 	return context;

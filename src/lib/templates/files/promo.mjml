@@ -16,15 +16,6 @@
     {% load cf as fragment ref='this' %}
     {% load featuredOffer as fragment ref='this.featuredOffer' %}
 
-    <!-- ─── Header ─── -->
-    <mj-section background-color="#FFFFFF" padding="24px 24px 12px">
-      <mj-column>
-        <mj-text font-size="12px" color="#767676" align="center" text-transform="uppercase" letter-spacing="2px">
-          {{static.companyName}}
-        </mj-text>
-      </mj-column>
-    </mj-section>
-
     <!-- ─── Hero ─── -->
     <mj-section background-color="#FFFFFF" padding="20px 40px 16px">
       <mj-column>
@@ -93,13 +84,7 @@
     <!-- ─── Footer ─── -->
     <mj-section background-color="#F4F4F4" padding="24px 40px">
       <mj-column>
-        <mj-text font-size="12px" color="#888888" align="center" line-height="1.6">
-          © {{static.year}} {{static.companyName}}. All rights reserved.<br/>
-          You're receiving this because you opted in to {{static.companyName}} marketing emails.<br/>
-          <a href="{{static.unsubscribeUrl}}" class="footer-link">Unsubscribe</a>
-          &nbsp;·&nbsp;
-          <a href="{{static.privacyUrl}}" class="footer-link">Privacy Policy</a>
-        </mj-text>
+        <mj-raw>{%#fragment id="brand-footer"%}{%/fragment%}</mj-raw>
       </mj-column>
     </mj-section>
 

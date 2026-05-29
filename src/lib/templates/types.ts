@@ -1,8 +1,9 @@
 export interface TemplateFieldDefinition {
 	type: 'text' | 'richtext' | 'url' | 'reference';
 	required: boolean;
-	binding: string;
-	/** MJML/output token when different from `binding` (e.g. cf.emailCopyHtml). */
+	/** MJML token override when different from `cf.${fieldId}`. */
+	binding?: string;
+	/** @deprecated Legacy render token override (e.g. cf.emailCopyHtml). */
 	renderBinding?: string;
 	/** AEM CF property for data-aue-prop when different from the template field id. */
 	aueProp?: string;

@@ -16,14 +16,6 @@
   </mj-head>
 
   <mj-body background-color="#F5F5F7">
-    <mj-section background-color="#FFFFFF" padding="20px 24px 8px">
-      <mj-column>
-        <mj-text font-size="12px" color="#767676" align="center" text-transform="uppercase" letter-spacing="2px">
-          {{static.companyName}}
-        </mj-text>
-      </mj-column>
-    </mj-section>
-
     <mj-section background-color="#FFFFFF" padding="8px 24px 16px">
       <mj-column>
         <mj-text font-size="30px" color="#1A1A1A" font-weight="bold" align="left" line-height="1.25">
@@ -32,11 +24,11 @@
       </mj-column>
     </mj-section>
 
-    {% if cf.bannerImageUrl %}
+    {% if cf.bannerImage %}
     <mj-section background-color="#FFFFFF" padding="0 24px 20px">
       <mj-column>
         <mj-image
-          src="{{cf.bannerImageUrl}}"
+          src="{{{cf.bannerImage}}}"
           alt="{{cf.title}}"
           padding="0"
           border-radius="8px"
@@ -48,7 +40,7 @@
     <mj-section background-color="#FFFFFF" padding="0 24px 24px">
       <mj-column>
         <mj-text>
-          {{cf.emailCopyHtml}}
+          {{{cf.emailCopy}}}
         </mj-text>
       </mj-column>
     </mj-section>
@@ -65,9 +57,7 @@
 
     <mj-section background-color="#F5F5F7" padding="20px 24px">
       <mj-column>
-        <mj-text font-size="12px" color="#8B8F98" align="center">
-          © {{static.year}} {{static.companyName}}
-        </mj-text>
+        <mj-raw>{%#fragment id="brand-footer"%}{%/fragment%}</mj-raw>
       </mj-column>
     </mj-section>
   </mj-body>

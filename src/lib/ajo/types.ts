@@ -2,6 +2,7 @@
 // Shape matches POST/PUT /ajo/content/templates (application/vnd.adobe.ajo.template.v1+json).
 
 export const AJO_TEMPLATE_CONTENT_TYPE = 'application/vnd.adobe.ajo.template.v1+json';
+export const AJO_TEMPLATE_LIST_CONTENT_TYPE = 'application/vnd.adobe.ajo.template-list.v1+json';
 
 export type AjoTemplateType = 'html' | 'html_primary_page' | 'html_sub_page' | 'content';
 export type AjoTemplateChannel = 'email' | 'shared' | 'code';
@@ -28,6 +29,28 @@ export interface AJOContentTemplateResult {
 	id: string;
 	status: 'created' | 'updated';
 	previewUrl?: string;
+}
+
+export interface AJOContentTemplateDetail {
+	id: string;
+	name: string;
+	etag?: string;
+}
+
+export interface AjoContentTemplateListItem {
+	id: string;
+	name: string;
+	description?: string;
+	templateType: string;
+	channels: string[];
+	origin?: string;
+	modifiedAt?: string;
+	createdAt?: string;
+}
+
+export interface AjoContentTemplatePage {
+	items: AjoContentTemplateListItem[];
+	next?: string;
 }
 
 export function buildAjoEmailHtmlTemplatePayload(opts: {

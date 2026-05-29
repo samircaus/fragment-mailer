@@ -1,39 +1,22 @@
 <script lang="ts">
 	import PreviewResourceManager from '$lib/components/PreviewResourceManager.svelte';
-	import type { BrandListItem, PersonaListItem } from '$lib/personas/types.js';
-
-	type ResourceItem = PersonaListItem | BrandListItem;
-	type ManagerTab = 'persona' | 'brand';
+	import type { PersonaListItem } from '$lib/personas/types.js';
 
 	interface Props {
 		open?: boolean;
 		personas?: PersonaListItem[];
-		brands?: BrandListItem[];
 		selectedPersonaId?: string;
-		selectedBrandId?: string;
 		onclose?: () => void;
-		onpersonaschange?: (detail: { items: ResourceItem[]; selectedId: string }) => void;
-		onbrandschange?: (detail: { items: ResourceItem[]; selectedId: string }) => void;
+		onpersonaschange?: (detail: { items: PersonaListItem[]; selectedId: string }) => void;
 	}
 
 	let {
 		open = false,
 		personas = [],
-		brands = [],
 		selectedPersonaId = '',
-		selectedBrandId = '',
 		onclose,
-		onpersonaschange,
-		onbrandschange
+		onpersonaschange
 	}: Props = $props();
-
-	let activeTab = $state<ManagerTab>('persona');
-	let wasOpen = false;
-
-	$effect(() => {
-		if (open && !wasOpen) activeTab = 'persona';
-		wasOpen = open;
-	});
 
 	function closeDialog() {
 		onclose?.();
@@ -51,54 +34,18 @@
 			aria-labelledby="profiles-manager-title"
 		>
 			<header class="profiles-header">
-				<h2 id="profiles-manager-title" class="profiles-title">Manage preview data</h2>
+				<h2 id="profiles-manager-title" class="profiles-title">Manage preview personas</h2>
 				<button type="button" class="profiles-close" onclick={closeDialog} aria-label="Close">×</button>
 			</header>
 
-			<div class="profiles-tabs" role="tablist" aria-label="Preview data type">
-				<button
-					type="button"
-					class="profiles-tab"
-					class:active={activeTab === 'persona'}
-					role="tab"
-					aria-selected={activeTab === 'persona'}
-					onclick={() => (activeTab = 'persona')}
-				>
-					Personas
-				</button>
-				<button
-					type="button"
-					class="profiles-tab"
-					class:active={activeTab === 'brand'}
-					role="tab"
-					aria-selected={activeTab === 'brand'}
-					onclick={() => (activeTab = 'brand')}
-				>
-					Brands
-				</button>
-			</div>
-
-			{#key activeTab}
-				{#if activeTab === 'persona'}
-					<PreviewResourceManager
-						embedded
-						kind="persona"
-						open={true}
-						items={personas}
-						selectedId={selectedPersonaId}
-						onchange={onpersonaschange}
-					/>
-				{:else}
-					<PreviewResourceManager
-						embedded
-						kind="brand"
-						open={true}
-						items={brands}
-						selectedId={selectedBrandId}
-						onchange={onbrandschange}
-					/>
-				{/if}
-			{/key}
+			<PreviewResourceManager
+				embedded
+				kind="persona"
+				open={true}
+				items={personas}
+				selectedId={selectedPersonaId}
+				onchange={onpersonaschange}
+			/>
 		</div>
 	</div>
 {/if}
@@ -169,33 +116,5 @@
 	.profiles-close:hover {
 		background: #f4f4f5;
 		color: #111;
-	}
-
-	.profiles-tabs {
-		display: flex;
-		gap: 4px;
-		padding: 10px 16px 0;
-		border-bottom: 1px solid #f4f4f5;
-	}
-
-	.profiles-tab {
-		padding: 8px 12px;
-		border: none;
-		border-bottom: 2px solid transparent;
-		background: transparent;
-		color: #71717a;
-		font-size: 12px;
-		font-weight: 600;
-		cursor: pointer;
-		margin-bottom: -1px;
-	}
-
-	.profiles-tab:hover {
-		color: #3f3f46;
-	}
-
-	.profiles-tab.active {
-		color: #5b5bd6;
-		border-bottom-color: #5b5bd6;
 	}
 </style>

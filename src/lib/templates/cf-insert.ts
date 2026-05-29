@@ -18,21 +18,25 @@ function fieldTypeKind(type: string, name: string): 'richtext' | 'image' | 'refe
 }
 
 export function cfTokenForField(name: string, type: string): string {
-	const kind = fieldTypeKind(type, name);
-	if (kind === 'richtext') return `cf.${name}Html`;
-	if (kind === 'image') return `cf.${name}Url`;
 	return `cf.${name}`;
+}
+
+function cfOutputDelimiters(kind: 'richtext' | 'image' | 'reference' | 'text'): { open: string; close: string } {
+	// AJO uses triple-brace Handlebars for unescaped image URLs and rich text HTML.
+	if (kind === 'richtext' || kind === 'image') return { open: '{{{', close: '}}}' };
+	return { open: '{{', close: '}}' };
 }
 
 export function buildCfFieldMjmlSnippet(field: Pick<AuthorModelField, 'name' | 'type' | 'label'>): string {
 	const token = cfTokenForField(field.name, field.type);
 	const kind = fieldTypeKind(field.type, field.name);
+	const { open, close } = cfOutputDelimiters(kind);
 
 	switch (kind) {
 		case 'richtext':
-			return `<mj-text padding="0">\n  {{${token}}}\n</mj-text>`;
+			return `<mj-text padding="0">\n  ${open}${token}${close}\n</mj-text>`;
 		case 'image':
-			return `<mj-image src="{{${token}}}" alt="" />`;
+			return `<mj-image src="${open}${token}${close}" alt="" />`;
 		case 'reference':
 			return `{# ${field.label || field.name} — fragment reference #}\n{% load ${field.name} as fragment ref='this.${field.name}' %}`;
 		default:

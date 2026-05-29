@@ -1,10 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import {
 	buildFieldMappings,
+	resolveCfBinding,
 	syncTemplateFromAemModel,
 	toCfElementName
 } from '../src/lib/templates/cf-fields.js';
 import type { TemplateDefinition } from '../src/lib/templates/types.js';
+
+describe('resolveCfBinding', () => {
+	it('defaults to cf.{fieldId}', () => {
+		expect(resolveCfBinding('emailCopy')).toBe('cf.emailCopy');
+	});
+
+	it('uses explicit binding override when set', () => {
+		expect(resolveCfBinding('emailBody', { binding: 'cf.emailCopy' })).toBe('cf.emailCopy');
+	});
+});
 
 describe('cf-fields', () => {
 	it('toCfElementName capitalizes API field names', () => {
@@ -22,7 +33,6 @@ describe('cf-fields', () => {
 				emailCopy: {
 					type: 'richtext',
 					required: true,
-					binding: 'cf.emailCopy',
 					aueProp: 'emailBody',
 					modelId: 'offer-body'
 				}
@@ -32,6 +42,7 @@ describe('cf-fields', () => {
 		};
 
 		const rows = buildFieldMappings(definition, null, null);
+		expect(rows[0]?.cfBinding).toBe('cf.emailCopy');
 		expect(rows[0]?.mismatch).toContain('emailBody');
 	});
 
@@ -49,7 +60,8 @@ describe('cf-fields', () => {
 		});
 
 		expect(result.definition.fields.emailCopy?.aueProp).toBeUndefined();
-		expect(result.definition.fields.emailCopy?.binding).toBe('cf.emailCopy');
+		expect(result.definition.fields.emailCopy?.binding).toBeUndefined();
+		expect(resolveCfBinding('emailCopy', result.definition.fields.emailCopy)).toBe('cf.emailCopy');
 		expect(result.componentModels[1]?.fields[0]?.name).toBe('emailCopy');
 		expect(result.componentDefinition.groups[0]?.components[1]?.plugins.aem.cf.name).toBe(
 			'EmailCopy'

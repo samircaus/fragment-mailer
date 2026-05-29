@@ -22,13 +22,12 @@ import { buildUEBindings } from '$lib/render/ue-bindings.js';
 import { validate, type ValidationWarning } from '$lib/render/validate.js';
 import { flattenPersona, resolvePreviewPersona } from '$lib/personas/validate.js';
 import { getPersonaById } from '$lib/personas/service.js';
-import { resolveBrand } from '$lib/brands/service.js';
 import { applyPreviewColorScheme } from '$lib/preview/color-scheme-preview.js';
 import {
 	formatEnvelopeHtmlComment,
 	resolveEmailEnvelope
 } from '$lib/preview/envelope.js';
-import { buildStaticContext } from '$lib/preview/static-context.js';
+import { applyPreviewFragments } from '$lib/fragments/preview.js';
 import { getCampaignWithCF } from '$lib/campaigns/service.js';
 import { resolveAppEnv } from '$lib/server/app-env.js';
 
@@ -38,8 +37,6 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
 	const { campaignId } = params;
 	const personaId = url.searchParams.get('personaId') ?? 'persona-1';
 	const personaJson = url.searchParams.get('persona');
-	const brandId = url.searchParams.get('brandId');
-	const brandName = url.searchParams.get('brandName');
 	const colorSchemeParam = url.searchParams.get('colorScheme')?.trim().toLowerCase();
 	const previewColorScheme = colorSchemeParam === 'dark' ? 'dark' : 'light';
 
@@ -67,22 +64,23 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
 	const persona = personaJson
 		? resolvePreviewPersona(personaId, personaJson)
 		: await getPersonaById(platform, personaId);
-	const brand = await resolveBrand(platform, { brandId, brandName });
 	const flatProfile = flattenPersona(persona);
 
 	const context = {
 		cf: cfContext,
 		profile: flatProfile,
-		preserveProfile: false, // preview mode: resolve profile tokens from persona
-		static: buildStaticContext(brand)
+		preserveProfile: false,
+		static: { year: new Date().getFullYear() }
 	};
 
+	const mjmlWithFragments = await applyPreviewFragments(mjml, env);
+
 	// Instrument {{cf.*}} output tokens first, then resolve values.
-	const instrumentedMJML = instrumentCFOutputTokens(mjml);
-	const discoveredBindings = collectCFOutputBindings(mjml);
+	const instrumentedMJML = instrumentCFOutputTokens(mjmlWithFragments);
+	const discoveredBindings = collectCFOutputBindings(mjmlWithFragments);
 
 	const envelope = resolveEmailEnvelope({
-		mjml,
+		mjml: mjmlWithFragments,
 		context,
 		templateName: definition.name
 	});
@@ -178,7 +176,9 @@ function buildCFContext(
 
 	const imageUrl = context.bannerImageUrl;
 	if (typeof imageUrl === 'string' && imageUrl.startsWith('/') && assetBaseUrl) {
-		context.bannerImageUrl = `${assetBaseUrl.replace(/\/$/, '')}${imageUrl}`;
+		const absolute = `${assetBaseUrl.replace(/\/$/, '')}${imageUrl}`;
+		context.bannerImageUrl = absolute;
+		context.bannerImage = absolute;
 	}
 
 	return context;

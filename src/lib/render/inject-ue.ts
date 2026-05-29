@@ -18,6 +18,7 @@ export interface UEBinding {
 	modelId?: string;  // per-span UE model, e.g. "hero", "promo-body", "offer-body"
 }
 
+const TRIPLE_OUTPUT_TOKEN_RE = /\{\{\{\s*([\s\S]*?)\s*\}\}\}/g;
 const OUTPUT_TOKEN_RE = /\{\{\s*([\s\S]*?)\s*\}\}/g;
 const VALID_CF_PATH_RE = /^cf\.[A-Za-z_]\w*(\.[A-Za-z_]\w*)*$/;
 
@@ -100,26 +101,39 @@ export function wrapWithBinding(value: string, fieldPath: string): string {
 // Wrap all render-output CF tokens ({{cf.*}}) in data-fm-binding spans.
 // This runs on template MJML before resolver execution, so compiled HTML keeps
 // stable markers that UE can instrument even if template definitions lag behind.
-export function instrumentCFOutputTokens(template: string): string {
-	return transformOutsideTags(template, (segment) =>
-		segment.replace(OUTPUT_TOKEN_RE, (full, expr: string, offset: number, input: string) => {
-			const fieldPath = extractCFPath(expr);
-			if (!fieldPath) return full;
-			if (isInsideBindingSpan(input, offset)) return full;
-			return wrapWithBinding(full, fieldPath);
-		})
-	);
+function instrumentCfTokensInSegment(segment: string): string {
+	const wrap = (full: string, expr: string, offset: number, input: string) => {
+		const fieldPath = extractCFPath(expr);
+		if (!fieldPath) return full;
+		if (isInsideBindingSpan(input, offset)) return full;
+		return wrapWithBinding(full, fieldPath);
+	};
+
+	return segment
+		.replace(TRIPLE_OUTPUT_TOKEN_RE, wrap)
+		.replace(OUTPUT_TOKEN_RE, wrap);
 }
 
-// Discover all {{cf.*}} output bindings used in the template body text.
+function collectCfTokensInSegment(segment: string, found: Set<string>): void {
+	const collect = (_full: string, expr: string) => {
+		const fieldPath = extractCFPath(expr);
+		if (fieldPath) found.add(fieldPath);
+		return _full;
+	};
+
+	segment.replace(TRIPLE_OUTPUT_TOKEN_RE, collect);
+	segment.replace(OUTPUT_TOKEN_RE, collect);
+}
+
+export function instrumentCFOutputTokens(template: string): string {
+	return transformOutsideTags(template, instrumentCfTokensInSegment);
+}
+
+// Discover all {{cf.*}} / {{{cf.*}}} output bindings used in the template body text.
 export function collectCFOutputBindings(template: string): string[] {
 	const found = new Set<string>();
 	transformOutsideTags(template, (segment) => {
-		segment.replace(OUTPUT_TOKEN_RE, (_full, expr: string) => {
-			const fieldPath = extractCFPath(expr);
-			if (fieldPath) found.add(fieldPath);
-			return _full;
-		});
+		collectCfTokensInSegment(segment, found);
 		return segment;
 	});
 	return [...found];

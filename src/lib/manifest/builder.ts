@@ -4,6 +4,7 @@
 // and to attach CF references in the AJO email editor.
 
 import type { ResolvedCFData } from '../aem/types.js';
+import { resolveCfBinding } from '../templates/cf-fields.js';
 import type { TemplateDefinition } from '../templates/registry.js';
 
 export interface ManifestBinding {
@@ -84,7 +85,7 @@ function extractBindings(
 	const bindings: ManifestBinding[] = [];
 
 	for (const [fieldId, fieldDef] of Object.entries(template.fields)) {
-		const binding = fieldDef.binding; // e.g. "cf.heroHeadline" or "cf.featuredOffer"
+		const binding = resolveCfBinding(fieldId, fieldDef);
 
 		if (fieldDef.type === 'reference') {
 			const refCF = referencedCFs.find((cf) => cf.path.includes(fieldId));

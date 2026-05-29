@@ -184,6 +184,14 @@ export function normalizeCF(fragment: CFFragment): ResolvedCFData {
 		}
 	}
 
+	// Flatten derived values onto base CF field names for template/AJO tokens.
+	if (cleanFields.bannerImageUrl !== undefined) {
+		cleanFields.bannerImage = cleanFields.bannerImageUrl;
+	}
+	if (cleanFields.emailCopyHtml !== undefined) {
+		cleanFields.emailCopy = cleanFields.emailCopyHtml;
+	}
+
 	return {
 		path: _path,
 		modelPath: _model._path,

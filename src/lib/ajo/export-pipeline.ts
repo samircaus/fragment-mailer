@@ -16,6 +16,7 @@ import {
 import { resolveLoadTagRefs } from '$lib/render/ajo-ref-resolver.js';
 import { normalizeAjoPersonalizationSyntax, wrapAjoControlTagsForMjml } from '$lib/render/ajo-export.js';
 import { ensureLoadTagsInTemplate } from '$lib/render/ajo-load-inject.js';
+import { applyPreviewFragments } from '$lib/fragments/preview.js';
 import type { TemplateDefinition } from '$lib/templates/registry.js';
 import type { AuthorFragment } from '$lib/types/aem.js';
 import { validateAjoExport, type AjoExportValidationError } from './validate.js';
@@ -135,6 +136,32 @@ export async function transformTemplateForAjo(input: AjoTransformInput): Promise
 		resolvedCount: resolved.length,
 		validationErrors
 	};
+}
+
+export interface StandaloneAjoTransformResult {
+	html: string;
+	validationErrors: AjoExportValidationError[];
+}
+
+/** Compile MJML for AJO without AEM content fragment bindings. */
+export async function transformStandaloneMjmlForAjo(input: {
+	mjml: string;
+	env?: AppEnv;
+}): Promise<StandaloneAjoTransformResult> {
+	const mjmlWithFragments = await applyPreviewFragments(input.mjml, input.env);
+	const wrappedMjml = wrapAjoControlTagsForMjml(mjmlWithFragments);
+	const compileResult = await compileMJML(wrappedMjml, { minify: false });
+	const html = normalizeAjoPersonalizationSyntax(compileResult.html ?? '');
+	const validationErrors: AjoExportValidationError[] = [];
+
+	if (!compileResult.html) {
+		validationErrors.push({
+			code: 'leftover_load_tags',
+			message: `MJML compilation failed: ${compileResult.errors.map((e) => e.message).join('; ')}`
+		});
+	}
+
+	return { html, validationErrors };
 }
 
 async function loadCampaignFragment(

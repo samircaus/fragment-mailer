@@ -3,7 +3,7 @@
 	import { onMount, tick } from 'svelte';
 	import { cfExperienceCloudEditorUrl, universalEditorCanvasUrl } from '$lib/aem/author-links.js';
 	import { type Persona } from '$lib/personas/samples.js';
-	import type { BrandListItem, PersonaListItem } from '$lib/personas/types.js';
+	import type { PersonaListItem } from '$lib/personas/types.js';
 	import PreviewProfilesManager from '$lib/components/PreviewProfilesManager.svelte';
 	import TemplateFieldsManager from '$lib/components/TemplateFieldsManager.svelte';
 	import type { CfInsertField } from '$lib/templates/cf-insert.js';
@@ -12,6 +12,7 @@
 	import MjmlCodeEditor from '$lib/components/MjmlCodeEditor.svelte';
 	import type { AjoRequestFailure } from '$lib/ajo/client.js';
 	import { formatAjoPushError } from '$lib/ajo/format-push-error.js';
+	import { formatAjoTemplateLabel } from '$lib/ajo/format-template-id.js';
 	import {
 		parseEnvelopeHtmlComment,
 		type EmailEnvelope
@@ -72,8 +73,6 @@
 
 	// Persona picker
 	let personas = $state<PersonaListItem[]>([]);
-	let brands = $state<BrandListItem[]>([]);
-	let selectedBrandId = $state('acme-corp');
 	let previewActionsOpen = $state(false);
 	let previewManagerOpen = $state(false);
 	let templateFieldsManagerOpen = $state(false);
@@ -94,8 +93,17 @@
 	// Left panel UI
 	const LEFT_PANEL_WIDTH_KEY = 'editor-left-panel-width';
 	const LEFT_PANEL_MIN = 280;
-	const LEFT_PANEL_MAX = 720;
+	const LEFT_PANEL_PREVIEW_MIN = 320;
 	const LEFT_PANEL_DEFAULT = 480;
+
+	function getLeftPanelMax(): number {
+		if (typeof window === 'undefined') return 1200;
+		return Math.max(LEFT_PANEL_MIN, window.innerWidth - LEFT_PANEL_PREVIEW_MIN);
+	}
+
+	function clampLeftPanelWidth(width: number): number {
+		return Math.min(getLeftPanelMax(), Math.max(LEFT_PANEL_MIN, width));
+	}
 
 	let leftPanelWidth = $state(LEFT_PANEL_DEFAULT);
 	let isResizingPanel = $state(false);
@@ -130,6 +138,8 @@
 	let ajoErrorDialogOpen = $state(false);
 	let ajoErrorDialogText = $state('');
 	let ajoErrorCopyStatus = $state<'idle' | 'done'>('idle');
+	let ajoActionsOpen = $state(false);
+	let ajoUnlinkStatus = $state<'idle' | 'unlinking' | 'error'>('idle');
 
 	// Textarea ref (for Tab/cursor handling)
 	let mjmlEditor = $state<MjmlCodeEditor | null>(null);
@@ -193,7 +203,7 @@
 		if (stored) {
 			const parsed = Number.parseInt(stored, 10);
 			if (!Number.isNaN(parsed)) {
-				leftPanelWidth = Math.min(LEFT_PANEL_MAX, Math.max(LEFT_PANEL_MIN, parsed));
+				leftPanelWidth = clampLeftPanelWidth(parsed);
 			}
 		}
 
@@ -214,22 +224,12 @@
 
 	async function loadPreviewContext() {
 		try {
-			const [personasRes, brandsRes] = await Promise.all([
-				fetch('/api/personas'),
-				fetch('/api/brands')
-			]);
+			const personasRes = await fetch('/api/personas');
 			if (personasRes.ok) {
 				const data = (await personasRes.json()) as { personas: PersonaListItem[] };
 				personas = data.personas;
 				if (!personas.some((p) => p.id === selectedPersonaId) && personas[0]) {
 					selectedPersonaId = personas[0].id;
-				}
-			}
-			if (brandsRes.ok) {
-				const data = (await brandsRes.json()) as { brands: BrandListItem[] };
-				brands = data.brands;
-				if (!brands.some((b) => b.id === selectedBrandId) && brands[0]) {
-					selectedBrandId = brands[0].id;
 				}
 			}
 		} catch (err) {
@@ -244,10 +244,7 @@
 		isResizingPanel = true;
 
 		function onMove(moveEvent: MouseEvent) {
-			leftPanelWidth = Math.min(
-				LEFT_PANEL_MAX,
-				Math.max(LEFT_PANEL_MIN, startWidth + (moveEvent.clientX - startX))
-			);
+			leftPanelWidth = clampLeftPanelWidth(startWidth + (moveEvent.clientX - startX));
 		}
 
 		function onUp() {
@@ -280,7 +277,6 @@
 		const id = campaignId;
 		const templateId = selectedTemplateId;
 		const personaId = selectedPersonaId;
-		const brandId = selectedBrandId;
 		const persona = selectedPersona;
 
 		if (tab !== 'html' || !id || !templateId || !mjml.trim()) {
@@ -292,7 +288,7 @@
 
 		const timer = setTimeout(() => {
 			const requestId = ++htmlCompileRequestId;
-			void compileHtmlPreview(mjml, id, templateId, personaId, brandId, persona, requestId);
+			void compileHtmlPreview(mjml, id, templateId, personaId, persona, requestId);
 		}, 400);
 
 		return () => clearTimeout(timer);
@@ -352,7 +348,6 @@
 		id: string,
 		templateId: string,
 		personaId: string,
-		brandId: string,
 		persona: Persona | null | undefined,
 		requestId: number
 	) {
@@ -365,7 +360,6 @@
 					campaignId: id,
 					templateId,
 					personaId,
-					brandId,
 					persona: persona ?? undefined
 				})
 			});
@@ -614,6 +608,45 @@
 		}
 	}
 
+	async function handleAjoUnlink() {
+		if (!campaignId || !remoteTemplateId() || ajoUnlinkStatus === 'unlinking') return;
+		const confirmed = confirm(
+			'Unlink this campaign from its AJO template?\n\nUse this if you deleted the template manually in AJO. The next push will create a new template.'
+		);
+		if (!confirmed) return;
+
+		ajoActionsOpen = false;
+		ajoUnlinkStatus = 'unlinking';
+		ajoActionMessage = '';
+		try {
+			const res = await fetch(`/api/campaigns/${encodeURIComponent(campaignId)}/ajo-link`, {
+				method: 'DELETE'
+			});
+			const data = (await res.json().catch(() => ({}))) as {
+				campaign?: Campaign;
+				message?: string;
+			};
+			if (!res.ok) {
+				throw new Error(data.message ?? `Unlink failed: ${res.status}`);
+			}
+			if (data.campaign) {
+				campaign = data.campaign;
+			} else {
+				await loadCampaign();
+			}
+			ajoPushStatus = 'idle';
+			ajoUnlinkStatus = 'idle';
+		} catch (e) {
+			ajoActionMessage = e instanceof Error ? e.message : 'Unlink failed';
+			ajoUnlinkStatus = 'error';
+			setTimeout(() => (ajoUnlinkStatus = 'idle'), 5000);
+		}
+	}
+
+	function closeAjoActions() {
+		ajoActionsOpen = false;
+	}
+
 	async function handleAjoPush() {
 		if (!campaignId) return;
 		ajoPushStatus = 'exporting';
@@ -634,6 +667,8 @@
 			const data = (await res.json()) as {
 				ok?: boolean;
 				templateId?: string;
+				pushMethod?: 'create' | 'update';
+				remoteTemplateIdSaved?: boolean;
 				message?: string;
 				failure?: AjoRequestFailure;
 				validationErrors?: Array<{ message: string }>;
@@ -665,9 +700,16 @@
 					}
 				};
 			}
-			ajoActionMessage = data.templateId ? `Template ${data.templateId}` : 'Sent';
+			const action = data.pushMethod === 'update' ? 'Updated' : 'Created';
+			ajoActionMessage = data.templateId
+				? `${action} ${formatAjoTemplateLabel(data.templateId)}`
+				: 'Sent';
+			if (data.templateId && data.remoteTemplateIdSaved === false) {
+				ajoActionMessage += ' (id not saved — missing CF UUID)';
+			}
 			ajoPushStatus = 'done';
-			setTimeout(() => (ajoPushStatus = 'idle'), 4000);
+			void loadCampaign();
+			setTimeout(() => (ajoPushStatus = 'idle'), 5000);
 		} catch (e) {
 			const msg = e instanceof Error ? e.message : 'Push failed';
 			openAjoErrorDialog(msg);
@@ -936,14 +978,9 @@
 		iframeKey += 1;
 	}
 
-	function selectBrand(id: string) {
-		if (selectedBrandId === id) return;
-		selectedBrandId = id;
-		iframeKey += 1;
-	}
-
 	function closePreviewPickers() {
 		previewActionsOpen = false;
+		closeAjoActions();
 	}
 
 	function openPreviewManager() {
@@ -956,7 +993,7 @@
 		templateFieldsManagerOpen = true;
 	}
 
-	type PreviewResourceItem = PersonaListItem | BrandListItem;
+	type PreviewResourceItem = PersonaListItem;
 
 	function handlePersonasChange(detail: { items: PreviewResourceItem[]; selectedId: string }) {
 		personas = detail.items as PersonaListItem[];
@@ -965,19 +1002,6 @@
 			iframeKey += 1;
 		} else if (!personas.some((p) => p.id === selectedPersonaId) && detail.selectedId) {
 			selectedPersonaId = detail.selectedId;
-			iframeKey += 1;
-		} else if (detail.items.length) {
-			iframeKey += 1;
-		}
-	}
-
-	function handleBrandsChange(detail: { items: PreviewResourceItem[]; selectedId: string }) {
-		brands = detail.items as BrandListItem[];
-		if (detail.selectedId && detail.selectedId !== selectedBrandId) {
-			selectedBrandId = detail.selectedId;
-			iframeKey += 1;
-		} else if (!brands.some((b) => b.id === selectedBrandId) && detail.selectedId) {
-			selectedBrandId = detail.selectedId;
 			iframeKey += 1;
 		} else if (detail.items.length) {
 			iframeKey += 1;
@@ -1025,6 +1049,15 @@
 
 	const ajoSyncStatus = $derived(campaign?.status ?? campaign?.emailStatus?.syncStatus ?? 'never_pushed');
 
+	const ajoSyncChipTitle = $derived.by(() => {
+		const hint = displayStatusHint(ajoSyncStatus);
+		const remoteId = campaign?.emailStatus?.remoteTemplateId;
+		if (!remoteId) return hint;
+		const pushed = campaign?.emailStatus?.lastPushedAt;
+		const pushedLine = pushed ? `Last pushed: ${new Date(pushed).toLocaleString()}` : '';
+		return [hint, `AJO template: ${remoteId}`, pushedLine].filter(Boolean).join('\n');
+	});
+
 	const pushButtonLabel = $derived.by(() => {
 		if (ajoPushStatus === 'exporting') return 'Sending…';
 		if (ajoPushStatus === 'done') return 'Sent ✓';
@@ -1033,7 +1066,7 @@
 			case 'stale':
 				return 'Update AJO';
 			case 'synced':
-				return 'Send again';
+				return 'Send to AJO';
 			default:
 				return 'Send to AJO';
 		}
@@ -1050,7 +1083,6 @@
 		const params = new URLSearchParams({
 			templateId: selectedTemplateId || 'promo',
 			personaId: selectedPersonaId,
-			brandId: selectedBrandId,
 			colorScheme: previewChrome,
 			t: String(iframeKey)
 		});
@@ -1065,7 +1097,7 @@
 <svelte:window
 	onclick={(e) => {
 		const target = e.target;
-		if (target instanceof Element && target.closest('.add-menu, .add-child-btn, .template-actions, .preview-actions')) return;
+		if (target instanceof Element && target.closest('.add-menu, .add-child-btn, .template-actions, .preview-actions, .ajo-actions')) return;
 		addMenuNode = null;
 		cfInsertMenuOpen = false;
 		closeTemplatePickers();
@@ -1075,6 +1107,7 @@
 		if (e.key === 'Escape') {
 			closeTemplatePickers();
 			closePreviewPickers();
+			closeAjoActions();
 		}
 		if (e.key === 'Escape' && previewManagerOpen) {
 			previewManagerOpen = false;
@@ -1098,7 +1131,7 @@
 					stroke-linejoin="round"
 				/>
 			</svg>
-			Campaigns
+			Emails
 		</a>
 		<div class="topbar-divider"></div>
 		<div class="campaign-name">{campaign?.name ?? campaignId}</div>
@@ -1227,7 +1260,7 @@
 			<div class="ajo-push-group">
 				<span
 					class="sync-chip sync-{ajoSyncStatus.replace('_', '-')}"
-					title={displayStatusHint(ajoSyncStatus)}
+					title={ajoSyncChipTitle}
 				>
 					<span class="sync-dot" aria-hidden="true"></span>
 					{displayStatusLabel(ajoSyncStatus)}
@@ -1238,14 +1271,51 @@
 					class:done={ajoPushStatus === 'done'}
 					class:error={ajoPushStatus === 'error'}
 					onclick={handleAjoPush}
-					disabled={ajoPushStatus === 'exporting' || ajoHtmlBusy}
+					disabled={ajoPushStatus === 'exporting' || ajoHtmlBusy || ajoUnlinkStatus === 'unlinking'}
 					title="Send to AJO Content Templates API"
 				>
 					{pushButtonLabel}
 				</button>
+				{#if remoteTemplateId()}
+					<div class="ajo-actions" class:open={ajoActionsOpen}>
+						<button
+							type="button"
+							class="ajo-actions-btn"
+							aria-haspopup="menu"
+							aria-expanded={ajoActionsOpen}
+							aria-label="AJO actions"
+							disabled={ajoPushStatus === 'exporting' || ajoUnlinkStatus === 'unlinking'}
+							onclick={(e) => {
+								e.stopPropagation();
+								ajoActionsOpen = !ajoActionsOpen;
+							}}
+						>
+							<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+								<circle cx="7" cy="3" r="1" fill="currentColor" />
+								<circle cx="7" cy="7" r="1" fill="currentColor" />
+								<circle cx="7" cy="11" r="1" fill="currentColor" />
+							</svg>
+						</button>
+						{#if ajoActionsOpen}
+							<ul class="ajo-actions-menu" role="menu" onclick={stopEventPropagation} onkeydown={stopEventPropagation}>
+								<li role="none">
+									<button
+										type="button"
+										class="ajo-actions-item"
+										role="menuitem"
+										disabled={ajoUnlinkStatus === 'unlinking'}
+										onclick={handleAjoUnlink}
+									>
+										Unlink AJO template
+									</button>
+								</li>
+							</ul>
+						{/if}
+					</div>
+				{/if}
 			</div>
 		</div>
-		{#if ajoActionMessage && (ajoPushStatus === 'error' || ajoHtmlDownloadStatus === 'error' || ajoHtmlCopyStatus === 'error')}
+		{#if ajoActionMessage && (ajoPushStatus === 'done' || ajoPushStatus === 'error' || ajoHtmlDownloadStatus === 'error' || ajoHtmlCopyStatus === 'error')}
 			{#if ajoPushStatus === 'error' && ajoErrorDialogText}
 				<button
 					type="button"
@@ -1255,6 +1325,10 @@
 				>
 					{ajoActionMessage} — details
 				</button>
+			{:else if ajoPushStatus === 'done'}
+				<span class="export-success-hint" title={campaign?.emailStatus?.remoteTemplateId ?? ajoActionMessage}>
+					{ajoActionMessage}
+				</span>
 			{:else}
 				<span class="export-error-hint" title={ajoActionMessage}>{ajoActionMessage}</span>
 			{/if}
@@ -1648,10 +1722,10 @@
 			onmousedown={startPanelResize}
 			onkeydown={(e) => {
 				if (e.key === 'ArrowLeft') {
-					leftPanelWidth = Math.max(LEFT_PANEL_MIN, leftPanelWidth - 16);
+					leftPanelWidth = clampLeftPanelWidth(leftPanelWidth - 16);
 					localStorage.setItem(LEFT_PANEL_WIDTH_KEY, String(leftPanelWidth));
 				} else if (e.key === 'ArrowRight') {
-					leftPanelWidth = Math.min(LEFT_PANEL_MAX, leftPanelWidth + 16);
+					leftPanelWidth = clampLeftPanelWidth(leftPanelWidth + 16);
 					localStorage.setItem(LEFT_PANEL_WIDTH_KEY, String(leftPanelWidth));
 				}
 			}}
@@ -1681,23 +1755,6 @@
 							</select>
 						</div>
 
-						<div class="preview-toolbar-divider" aria-hidden="true"></div>
-
-						<div class="preview-toolbar-section">
-							<label class="preview-toolbar-label" for="preview-brand-select">Brand</label>
-							<select
-								id="preview-brand-select"
-								class="preview-toolbar-select"
-								value={selectedBrandId}
-								disabled={brands.length === 0}
-								onchange={(e) => selectBrand(e.currentTarget.value)}
-							>
-								{#each brands as brand (brand.id)}
-									<option value={brand.id}>{brand.label}</option>
-								{/each}
-							</select>
-						</div>
-
 						<div class="preview-actions" class:open={previewActionsOpen}>
 							<button
 								type="button"
@@ -1705,7 +1762,7 @@
 								aria-haspopup="menu"
 								aria-expanded={previewActionsOpen}
 								aria-label="Preview data actions"
-								disabled={personas.length === 0 && brands.length === 0}
+								disabled={personas.length === 0}
 								onclick={(e) => {
 									e.stopPropagation();
 									previewActionsOpen = !previewActionsOpen;
@@ -1921,12 +1978,9 @@
 <PreviewProfilesManager
 	open={previewManagerOpen}
 	personas={personas}
-	brands={brands}
 	selectedPersonaId={selectedPersonaId}
-	selectedBrandId={selectedBrandId}
 	onclose={() => (previewManagerOpen = false)}
 	onpersonaschange={handlePersonasChange}
-	onbrandschange={handleBrandsChange}
 />
 
 <TemplateFieldsManager
@@ -2233,6 +2287,78 @@
 		gap: 8px;
 	}
 
+	.ajo-actions {
+		position: relative;
+		flex-shrink: 0;
+	}
+
+	.ajo-actions-btn {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 24px;
+		height: 24px;
+		padding: 0;
+		border: none;
+		border-radius: 6px;
+		background: transparent;
+		color: #fff;
+		cursor: pointer;
+		flex-shrink: 0;
+		transition:
+			color 0.12s,
+			background 0.12s;
+	}
+
+	.ajo-actions-btn:hover:not(:disabled) {
+		background: rgba(255, 255, 255, 0.08);
+	}
+
+	.ajo-actions-btn:disabled {
+		opacity: 0.45;
+		cursor: default;
+	}
+
+	.ajo-actions-menu {
+		position: absolute;
+		top: calc(100% + 4px);
+		right: 0;
+		z-index: 60;
+		margin: 0;
+		padding: 6px;
+		list-style: none;
+		background: #fff;
+		border-radius: 10px;
+		box-shadow:
+			0 2px 8px rgba(0, 0, 0, 0.06),
+			0 12px 32px rgba(0, 0, 0, 0.1);
+		min-width: 188px;
+		white-space: nowrap;
+	}
+
+	.ajo-actions-item {
+		display: block;
+		width: 100%;
+		padding: 8px 10px;
+		border: none;
+		border-radius: 6px;
+		background: transparent;
+		text-align: left;
+		font-size: 13px;
+		font-weight: 500;
+		color: #18181b;
+		cursor: pointer;
+	}
+
+	.ajo-actions-item:hover:not(:disabled) {
+		background: #f4f4f5;
+	}
+
+	.ajo-actions-item:disabled {
+		opacity: 0.5;
+		cursor: default;
+	}
+
 	.export-btn {
 		background: #5b5bd6;
 		color: #fff;
@@ -2266,6 +2392,14 @@
 	}
 	.export-btn.error {
 		background: #dc2626;
+	}
+	.export-success-hint {
+		font-size: 11px;
+		color: #16a34a;
+		max-width: 280px;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 	.export-error-hint {
 		font-size: 11px;
@@ -3639,12 +3773,13 @@
 	}
 
 	.preview-loading {
+		flex: 1;
 		display: flex;
 		align-items: center;
+		justify-content: center;
 		gap: 10px;
 		color: #a1a1aa;
 		font-size: 13px;
-		margin-top: 80px;
 	}
 
 	.loading-dot {

@@ -63,7 +63,7 @@ function getOrCreateBinding(
 
 function prependFragmentTags(mjml: string, bindings: AjoFragmentBinding[]): string {
 	if (bindings.length === 0) return mjml;
-	const tags = bindings.map((b) => `{% fragment id='${b.id}' result='${b.resultVar}' %}`).join('\n');
+	const tags = bindings.map((b) => `{{fragment id='${b.id}' result='${b.resultVar}'}}`).join('\n');
 
 	// Place declarations at the top of the document so subsequent usage can reference them.
 	const mjmlStart = mjml.indexOf('<mjml');

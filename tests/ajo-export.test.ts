@@ -24,8 +24,8 @@ describe('rewriteCfRefsForAjo', () => {
 			}
 		});
 
-		expect(result.mjml).toContain("{% fragment id='/content/dam/campaigns/welcome-series-1' result='cf0' %}");
-		expect(result.mjml).toContain("{% fragment id='/content/dam/offers/spring-sale' result='cf1' %}");
+		expect(result.mjml).toContain("{{fragment id='/content/dam/campaigns/welcome-series-1' result='cf0'}}");
+		expect(result.mjml).toContain("{{fragment id='/content/dam/offers/spring-sale' result='cf1'}}");
 		expect(result.mjml).toContain('{{ cf0.heroHeadline }}');
 		expect(result.mjml).toContain('{% if cf1.headline %}');
 		expect(result.mjml).toContain('{{ cf1.headline }}');
@@ -34,9 +34,9 @@ describe('rewriteCfRefsForAjo', () => {
 
 describe('normalizeAjoPersonalizationSyntax', () => {
 	it('converts liquid if/endif to AJO handlebars control tags', () => {
-		const html = '{% if cf.bannerImageUrl %}<img/>{% else %}<p/>{% endif %}';
+		const html = '{% if cf.bannerImage %}<img/>{% else %}<p/>{% endif %}';
 		expect(normalizeAjoPersonalizationSyntax(html)).toBe(
-			'{%#if cf.bannerImageUrl %}<img/>{%else%}<p/>{%/if%}'
+			'{%#if cf.bannerImage %}<img/>{%else%}<p/>{%/if%}'
 		);
 	});
 });

@@ -24,7 +24,7 @@ describe('inferLoadTagSpecs', () => {
 	});
 
 	it('infers only cf for offer template scalar bindings', () => {
-		const mjml = `<mj-body>{{ cf.title }}{{ cf.emailCopyHtml }}</mj-body>`;
+		const mjml = `<mj-body>{{ cf.title }}{{{ cf.emailCopy }}}</mj-body>`;
 		const specs = inferLoadTagSpecs(mjml);
 		expect(specs).toEqual([{ varName: 'cf', refExpression: 'this' }]);
 	});

@@ -1,4 +1,5 @@
 import type { TemplateDefinition, TemplateFieldDefinition } from '$lib/templates/registry.js';
+import { resolveCfBinding } from '$lib/templates/cf-fields.js';
 import type { UEBinding } from '$lib/render/inject-ue.js';
 
 export interface BuildUEBindingsInput {
@@ -15,7 +16,7 @@ export function buildUEBindings(input: BuildUEBindingsInput): UEBinding[] {
 	const coveredPaths = new Set<string>();
 
 	for (const [fieldId, fieldDef] of Object.entries(definition.fields)) {
-		const paths = collectTemplateBindingPaths(fieldDef);
+		const paths = collectTemplateBindingPaths(fieldId, fieldDef);
 		for (const fieldPath of paths) {
 			if (coveredPaths.has(fieldPath)) continue;
 			coveredPaths.add(fieldPath);
@@ -41,8 +42,11 @@ export function buildUEBindings(input: BuildUEBindingsInput): UEBinding[] {
 	return bindings;
 }
 
-function collectTemplateBindingPaths(fieldDef: TemplateFieldDefinition): string[] {
-	const paths = [fieldDef.binding];
+function collectTemplateBindingPaths(
+	fieldId: string,
+	fieldDef: TemplateFieldDefinition
+): string[] {
+	const paths = [resolveCfBinding(fieldId, fieldDef)];
 	if (fieldDef.renderBinding && !paths.includes(fieldDef.renderBinding)) {
 		paths.push(fieldDef.renderBinding);
 	}

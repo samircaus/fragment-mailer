@@ -208,8 +208,37 @@ async function runAjoExport(
 		);
 	}
 
-	const templateId = pushResult.data?.id;
-	if (templateId && campaign.cfUuid) {
+	const templateId = pushResult.data?.id?.trim() ?? '';
+	const pushMethod = existingId ? 'update' : 'create';
+
+	if (!templateId) {
+		const message =
+			'AJO accepted the push but did not return a template id (missing x-resource-id / Location header).';
+		console.error(
+			JSON.stringify({
+				event: 'ajo_export_push_missing_template_id',
+				timestamp: new Date().toISOString(),
+				campaignId,
+				cfUuid: campaign.cfUuid,
+				scope,
+				templateName: name,
+				pushMethod
+			})
+		);
+		return json(
+			{
+				ok: false,
+				message,
+				pushMethod,
+				html: transform.html,
+				repoId: transform.repoId
+			},
+			{ status: 502 }
+		);
+	}
+
+	let remoteTemplateIdSaved = false;
+	if (campaign.cfUuid) {
 		await upsertPushSuccess(db, {
 			cfUuid: campaign.cfUuid,
 			campaignId,
@@ -218,11 +247,24 @@ async function runAjoExport(
 			aemModifiedAt,
 			content: transform.html
 		});
+		remoteTemplateIdSaved = true;
+	} else {
+		console.warn(
+			JSON.stringify({
+				event: 'ajo_export_push_no_cf_uuid',
+				timestamp: new Date().toISOString(),
+				campaignId,
+				templateId,
+				message: 'remoteTemplateId not persisted — campaign.cfUuid missing'
+			})
+		);
 	}
 
 	return json({
 		ok: true,
 		templateId,
+		pushMethod,
+		remoteTemplateIdSaved,
 		status: pushResult.data?.status,
 		html: transform.html,
 		repoId: transform.repoId

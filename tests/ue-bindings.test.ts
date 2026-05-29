@@ -12,8 +12,6 @@ const offerDefinition = {
 		emailCopy: {
 			type: 'richtext',
 			required: true,
-			binding: 'cf.emailCopy',
-			renderBinding: 'cf.emailCopyHtml',
 			modelId: 'offer-email-copy'
 		}
 	},
@@ -25,14 +23,14 @@ describe('buildUEBindings', () => {
 	it('maps render token to AEM prop with richtext type', () => {
 		const bindings = buildUEBindings({
 			definition: offerDefinition,
-			discoveredBindings: ['cf.emailCopyHtml'],
+			discoveredBindings: ['cf.emailCopy'],
 			defaultCfPath: '/content/dam/offers/spring',
 			cfFields: {}
 		});
 
-		const emailBinding = bindings.find((b) => b.fieldPath === 'cf.emailCopyHtml');
+		const emailBinding = bindings.find((b) => b.fieldPath === 'cf.emailCopy');
 		expect(emailBinding).toEqual({
-			fieldPath: 'cf.emailCopyHtml',
+			fieldPath: 'cf.emailCopy',
 			cfPath: '/content/dam/offers/spring',
 			fieldName: 'emailCopy',
 			fieldType: 'richtext',
@@ -44,10 +42,10 @@ describe('buildUEBindings', () => {
 describe('injectUEAttributes — richtext', () => {
 	it('emits data-aue-type="richtext" for email body', () => {
 		const html =
-			'<span data-fm-binding="cf.emailCopyHtml"><p>Hello</p></span>';
+			'<span data-fm-binding="cf.emailCopy"><p>Hello</p></span>';
 		const out = injectUEAttributes(html, [
 			{
-				fieldPath: 'cf.emailCopyHtml',
+				fieldPath: 'cf.emailCopy',
 				cfPath: '/content/dam/offers/spring',
 				fieldName: 'emailCopy',
 				fieldType: 'richtext',

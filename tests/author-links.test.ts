@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
 	authorRepoHost,
 	appCanvasHost,
+	cfExperienceCloudBrowseUrl,
 	cfExperienceCloudEditorUrl,
 	cfAuthorEditorUrl,
 	cfAuthorAssetsUrl,
@@ -10,6 +11,25 @@ import {
 
 const UUID = '3027e723-a493-4b18-815d-d7c379847f5b';
 const AUTHOR = 'https://author-p125048-e1847106.adobeaemcloud.com';
+
+describe('cfExperienceCloudBrowseUrl', () => {
+	it('builds CF console browse link for a DAM folder', () => {
+		expect(
+			cfExperienceCloudBrowseUrl(
+				'/content/dam/email/en/campaigns',
+				'https://author-p125048-e1847106.adobeaemcloud.com',
+				'psc'
+			)
+		).toBe(
+			'https://experience.adobe.com/?repo=author-p125048-e1847106.adobeaemcloud.com#/@psc/aem/cf/editor/browse/content/dam/email/en/campaigns'
+		);
+	});
+
+	it('returns null without folder path or author host', () => {
+		expect(cfExperienceCloudBrowseUrl('', AUTHOR)).toBeNull();
+		expect(cfExperienceCloudBrowseUrl('/content/dam/foo', '')).toBeNull();
+	});
+});
 
 describe('cfExperienceCloudEditorUrl', () => {
 	it('builds Experience Cloud CF editor link', () => {

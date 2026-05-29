@@ -28,6 +28,10 @@ function rowFromDb(record: Record<string, unknown>): EmailStatusRow {
 	};
 }
 
+export function standaloneTemplateCfUuid(templateId: string): string {
+	return `standalone:${templateId}`;
+}
+
 export async function getEmailStatus(
 	db: DbLike | undefined,
 	scope: StatusScope,
@@ -245,6 +249,47 @@ export async function recordPushFailure(
 			now
 		)
 		.run();
+}
+
+export async function clearRemoteTemplateLink(
+	db: DbLike | undefined,
+	scope: StatusScope,
+	cfUuid: string
+): Promise<boolean> {
+	if (!cfUuid) return false;
+
+	const now = new Date().toISOString();
+
+	if (!db) {
+		const key = memoryKey(scope, cfUuid);
+		const existing = memoryStore.get(key);
+		if (!existing?.remoteTemplateId) return false;
+		memoryStore.set(key, {
+			...existing,
+			remoteTemplateId: null,
+			lastPushedAt: null,
+			contentHash: null,
+			lastPushError: null,
+			updatedAt: now
+		});
+		return true;
+	}
+
+	const result = await db
+		.prepare(
+			`UPDATE email_status SET
+				remote_template_id = NULL,
+				last_pushed_at = NULL,
+				content_hash = NULL,
+				last_push_error = NULL,
+				updated_at = ?
+			WHERE cf_uuid = ? AND ims_org_id = ? AND ajo_sandbox = ?
+				AND remote_template_id IS NOT NULL`
+		)
+		.bind(now, cfUuid, scope.imsOrgId, scope.ajoSandbox)
+		.run();
+
+	return (result.meta.changes ?? 0) > 0;
 }
 
 export function clearEmailStatusMemoryStore(): void {
