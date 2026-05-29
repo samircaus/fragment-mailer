@@ -3,7 +3,9 @@ import {
 	parseLoadTags,
 	replaceLoadTags,
 	buildLetFragmentTag,
-	hasUnresolvedLoadTags
+	hasUnresolvedLoadTags,
+	stripLoadTags,
+	hoistLetFragmentTagsInHtml
 } from '../src/lib/render/ajo-load-tags.js';
 
 describe('parseLoadTags', () => {
@@ -28,12 +30,42 @@ describe('parseLoadTags', () => {
 	});
 });
 
+describe('stripLoadTags', () => {
+	it('removes load tags without inserting let bindings', () => {
+		const raw = "{% load cf as fragment ref='this' %}";
+		const template = `<mj-body>${raw}<mj-text>{{ cf.title }}</mj-text></mj-body>`;
+		const out = stripLoadTags(template, [raw]);
+		expect(out).not.toContain('{% load');
+		expect(out).toContain('{{ cf.title }}');
+		expect(hasUnresolvedLoadTags(out)).toBe(false);
+	});
+});
+
+describe('hoistLetFragmentTagsInHtml', () => {
+	it('inserts let tags immediately after body, before preheader usage', () => {
+		const html = `<!doctype html><html><body style="margin:0">
+    <div style="display:none">{{cf.title}}</div>
+    <div role="article">{{cf.emailCopyHtml}}</div>
+  </body></html>`;
+		const letTag = buildLetFragmentTag('cf', 'uuid-123', 'publish.example.com');
+		const out = hoistLetFragmentTagsInHtml(html, [letTag]);
+
+		const bodyIdx = out.indexOf('<body');
+		const letIdx = out.indexOf(letTag);
+		const titleIdx = out.indexOf('{{cf.title}}');
+		expect(letIdx).toBeGreaterThan(bodyIdx);
+		expect(letIdx).toBeLessThan(titleIdx);
+		expect(out).toContain('repoId=publish.example.com');
+		expect(out).toContain('fragment(id="aem:uuid-123?repoId=publish.example.com")');
+	});
+});
+
 describe('replaceLoadTags', () => {
 	it('replaces load tags with let fragment bindings', () => {
 		const raw = "{% load cf as fragment ref='this' %}";
 		const letTag = buildLetFragmentTag('cf', 'uuid-123', 'publish.example.com');
 		const out = replaceLoadTags(raw, [{ raw, letTag }]);
-		expect(out).toContain("{% let cf = fragment(id='aem:uuid-123?repoId=publish.example.com') %}");
+		expect(out).toContain('{% let cf = fragment(id="aem:uuid-123?repoId=publish.example.com") %}');
 		expect(hasUnresolvedLoadTags(out)).toBe(false);
 	});
 });

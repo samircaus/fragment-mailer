@@ -1,12 +1,13 @@
 // POST /api/session — stores the UE-forwarded IMS token in an httpOnly cookie.
 // DELETE /api/session — clears the session.
 //
-// The load function in /ue/[fragmentId] also sets cookies directly when it
-// detects ?login-token in the URL; this endpoint exists for any future
-// client-side or external caller that needs to update the session.
+// POST requires strict auth (Cloudflare Access or APP_AUTH_SECRET) when configured.
+// The /ue/[fragmentId] bootstrap flow sets cookies directly from ?login-token.
 
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
+import { resolveAppEnv } from '$lib/server/app-env.js';
+import { isAllowedAuthorHost } from '$lib/server/auth.js';
 
 function cookieOpts(secure: boolean) {
 	return {
@@ -18,7 +19,7 @@ function cookieOpts(secure: boolean) {
 	};
 }
 
-export const POST: RequestHandler = async ({ request, cookies, url }) => {
+export const POST: RequestHandler = async ({ request, cookies, url, platform }) => {
 	const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
 	if (!body || typeof body.token !== 'string' || typeof body.authorHost !== 'string') {
 		throw error(400, 'token and authorHost are required');
@@ -30,6 +31,11 @@ export const POST: RequestHandler = async ({ request, cookies, url }) => {
 		new URL(authorHost);
 	} catch {
 		throw error(400, 'authorHost must be a valid URL');
+	}
+
+	const env = resolveAppEnv(platform?.env);
+	if (!isAllowedAuthorHost(authorHost, env)) {
+		throw error(400, 'authorHost is not an allowed AEM Author origin');
 	}
 
 	const secure = url.protocol === 'https:';

@@ -13,7 +13,8 @@ export const load: LayoutServerLoad = async ({ platform, url }) => {
 		},
 		aem: {
 			authorUrl,
-			cfEditorTenant: cfEditorTenant(env)
+			cfEditorTenant: cfEditorTenant(env),
+			campaignsPath: env?.AEM_CAMPAIGNS_PATH?.trim() || '/content/dam/email/en/campaigns'
 		}
 	};
 };

@@ -42,6 +42,17 @@ describe('transformTemplateForAjo — offer template without manual load tags', 
 
 		expect(result.injectedLoadTags).toContainEqual({ varName: 'cf', refExpression: 'this' });
 		expect(result.validationErrors).toHaveLength(0);
-		expect(result.html).toContain('aem:aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee');
+		expect(result.repoId).toBe('publish.example.com');
+		expect(result.html).toContain('fragment(id="aem:aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee?repoId=publish.example.com")');
+		expect(result.html).not.toContain("fragment(id='aem:");
+		expect(result.html).toContain('{%#if cf.bannerImageUrl %}');
+		expect(result.html).toContain('{%/if%}');
+		expect(result.html).not.toMatch(/\{%\s*endif\s*%\}/);
+
+		const letIdx = result.html.indexOf('{% let cf = fragment');
+		const preheaderIdx = result.html.indexOf('{{cf.title}}');
+		expect(letIdx).toBeGreaterThan(-1);
+		expect(preheaderIdx).toBeGreaterThan(-1);
+		expect(letIdx).toBeLessThan(preheaderIdx);
 	});
 });

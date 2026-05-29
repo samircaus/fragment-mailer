@@ -33,7 +33,7 @@ export function hasUnresolvedLoadTags(template: string): boolean {
 	return LOAD_TAG_RE.test(template);
 }
 
-/** Replace load tags with AJO {% let %} fragment bindings. */
+/** @deprecated Inline replacement leaves {% let %} after mj-preview; use stripLoadTags + hoistLetFragmentTagsInHtml. */
 export function replaceLoadTags(
 	template: string,
 	replacements: Array<{ raw: string; letTag: string }>
@@ -45,6 +45,29 @@ export function replaceLoadTags(
 	return output;
 }
 
+/** Remove {% load %} tags from the template after bindings are resolved. */
+export function stripLoadTags(template: string, loadTagRaws: string[]): string {
+	let output = template;
+	for (const raw of loadTagRaws) {
+		output = output.replace(raw, '');
+	}
+	return output;
+}
+
 export function buildLetFragmentTag(varName: string, uuid: string, repoId: string): string {
-	return `{% let ${varName} = fragment(id='aem:${uuid}?repoId=${repoId}') %}`;
+	return `{% let ${varName} = fragment(id="aem:${uuid}?repoId=${repoId}") %}`;
+}
+
+/** Insert all {% let %} fragment bindings immediately after <body> so preheader tokens are in scope. */
+export function hoistLetFragmentTagsInHtml(html: string, letTags: string[]): string {
+	if (letTags.length === 0) return html;
+
+	const block = `${letTags.join('\n')}\n`;
+	const bodyOpen = html.match(/<body\b[^>]*>/i);
+	if (!bodyOpen || bodyOpen.index === undefined) {
+		return `${block}${html}`;
+	}
+
+	const insertAt = bodyOpen.index + bodyOpen[0].length;
+	return `${html.slice(0, insertAt)}\n${block}${html.slice(insertAt)}`;
 }

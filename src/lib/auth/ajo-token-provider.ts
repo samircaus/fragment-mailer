@@ -14,6 +14,26 @@ export interface AjoCredentials {
 	scopes?: string[];
 }
 
+/** Default IMS scopes for AJO / Experience Platform APIs (includes product context for region). */
+export const DEFAULT_AJO_IMS_SCOPES = [
+	'openid',
+	'AdobeID',
+	'read_organizations',
+	'additional_info.projectedProductContext',
+	'session'
+] as const;
+
+export function ajoImsScopesFromEnv(env?: AppEnv): string[] {
+	const raw = env?.AJO_IMS_SCOPES?.trim();
+	if (raw) {
+		return raw
+			.split(',')
+			.map((s) => s.trim())
+			.filter(Boolean);
+	}
+	return [...DEFAULT_AJO_IMS_SCOPES];
+}
+
 export function ajoCredentialsFromEnv(env?: AppEnv): AjoCredentials | null {
 	const clientId = ajoImsClientId(env);
 	const clientSecret = ajoImsClientSecret(env);
@@ -24,7 +44,7 @@ export function ajoCredentialsFromEnv(env?: AppEnv): AjoCredentials | null {
 		clientSecret,
 		imsOrg,
 		imsHost: env?.IMS_HOST?.trim() ? `https://${env.IMS_HOST.replace(/^https?:\/\//, '')}` : undefined,
-		scopes: ['openid', 'AdobeID', 'session', 'adobeio_api', 'read_organizations']
+		scopes: ajoImsScopesFromEnv(env)
 	};
 }
 

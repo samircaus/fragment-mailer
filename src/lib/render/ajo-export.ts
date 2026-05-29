@@ -35,9 +35,17 @@ export function rewriteCfRefsForAjo(template: string, opts: PreserveCfRefsOption
 }
 
 export function wrapAjoControlTagsForMjml(mjml: string): string {
-	return mjml.replace(/\{%\s*(if|else|endif|let|fragment|load)\b[\s\S]*?%\}/g, (tag) => {
+	return mjml.replace(/\{%[#/]?\s*(if|else|endif|let|fragment|load)\b[\s\S]*?%\}/g, (tag) => {
 		return `<mj-raw>${tag}</mj-raw>`;
 	});
+}
+
+/** Convert Liquid-style control tags to AJO Handlebars personalization syntax. */
+export function normalizeAjoPersonalizationSyntax(html: string): string {
+	return html
+		.replace(/\{%\s*if\s+/g, '{%#if ')
+		.replace(/\{%\s*endif\s*%\}/g, '{%/if%}')
+		.replace(/\{%\s*else\s*%\}/g, '{%else%}');
 }
 
 function getOrCreateBinding(

@@ -71,5 +71,35 @@ describe('transformTemplateForAjo', () => {
 		expect(result.html).toContain('aem:aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee');
 		expect(result.html).toContain('aem:11111111-2222-3333-4444-555555555555');
 		expect(result.html).not.toMatch(/\{%\s*load\b/);
+
+		const firstLet = result.html.indexOf('{% let cf = fragment');
+		const firstCfToken = result.html.indexOf('{{ cf.heroHeadline }}');
+		expect(firstLet).toBeGreaterThan(-1);
+		expect(firstCfToken).toBeGreaterThan(-1);
+		expect(firstLet).toBeLessThan(firstCfToken);
+	});
+
+	it('derives publish repoId from author AEM_BASE_URL', async () => {
+		const mjml = `<mjml><mj-body>
+{% load cf as fragment ref='this' %}
+<mj-section><mj-column><mj-text>{{ cf.title }}</mj-text></mj-column></mj-section>
+</mj-body></mjml>`;
+
+		const result = await transformTemplateForAjo({
+			mjml,
+			campaignId: 'test-campaign',
+			campaignFragment: mockCampaign,
+			env: {
+				IMS_ORG_ID: 'org@AdobeOrg',
+				AJO_SANDBOX: 'prod',
+				AEM_BASE_URL: 'https://author-p125048-e1847106.adobeaemcloud.com'
+			},
+			imsOrgId: 'org@AdobeOrg',
+			ajoSandboxName: 'prod'
+		});
+
+		expect(result.repoId).toBe('publish-p125048-e1847106.adobeaemcloud.com');
+		expect(result.html).toContain('repoId=publish-p125048-e1847106.adobeaemcloud.com');
+		expect(result.html).not.toContain('repoId=author-');
 	});
 });

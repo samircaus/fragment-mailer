@@ -42,9 +42,13 @@ interface Env {
 	AJO_SANDBOX_NAME: string;
 	AJO_IMS_CLIENT_ID: string;
 	AJO_IMS_CLIENT_SECRET: string;
+	AJO_IMS_SCOPES: string;
 	AEM_AUTHOR_HOST: string;
 	AEM_PUBLISH_HOST: string;
 	AEM_CF_EDITOR_TENANT: string;
+	APP_AUTH_SECRET: string;
+	CF_ACCESS_TEAM_DOMAIN: string;
+	CF_ACCESS_AUD: string;
 }
 
 export {};

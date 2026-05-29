@@ -84,6 +84,36 @@ export function cfAuthorEditorUrl(
 	return `${base}/editor.html${path}.html`;
 }
 
+/** CF model admin console on Author (browse / edit models). */
+export function cfModelsConsoleUrl(authorBaseUrl: string | null | undefined): string | null {
+	if (!authorBaseUrl?.trim()) return null;
+	const base = authorBaseUrl.trim().replace(/\/$/, '');
+	return `${base}/mnt/overlay/dam/cfm/models/console/content/models.html`;
+}
+
+/**
+ * Experience Cloud CF model editor for a Sites CF Management API model id.
+ * Example:
+ *   https://experience.adobe.com/?repo=author-p125048-e1847106.adobeaemcloud.com#/@psc/aem/cf/model-editor/id/L2NvbmYvZW1haWw...
+ */
+export function cfExperienceCloudModelEditorUrl(
+	modelId: string,
+	authorBaseUrl: string | null | undefined,
+	tenantSlug: string = DEFAULT_EXP_TENANT
+): string | null {
+	if (!modelId?.trim() || !authorBaseUrl?.trim()) return null;
+
+	const repo = authorRepoHost(authorBaseUrl);
+	const tenant = tenantSlug.trim() || DEFAULT_EXP_TENANT;
+	const id = encodeURIComponent(modelId.trim());
+
+	return `https://experience.adobe.com/?repo=${encodeURIComponent(repo)}#/@${encodeURIComponent(tenant)}/aem/cf/model-editor/id/${id}`;
+}
+
+/** Adobe Sites CF Management API — model endpoints reference. */
+export const CF_MODELS_API_DOC_URL =
+	'https://developer.adobe.com/experience-cloud/experience-manager-apis/api/stable/sites/#tag/Model-Management';
+
 /** Assets console URL (browse / properties) for the same fragment. */
 export function cfAuthorAssetsUrl(
 	cfPath: string,

@@ -1,9 +1,16 @@
 // Server-side hooks.
 // Populates event.locals.aem from the httpOnly session cookies set by /api/session.
-// Also adds basic request logging for observability.
+// Gates sensitive routes when APP_AUTH_SECRET and/or Cloudflare Access is configured.
 
-import { redirect, type Handle } from '@sveltejs/kit';
+import { error, redirect, type Handle } from '@sveltejs/kit';
 import { isUniversalEditorReferer } from '$lib/ue/context.js';
+import { resolveAppEnv } from '$lib/server/app-env.js';
+import {
+	authConfigFromEnv,
+	authenticateRequest,
+	getRouteAuthLevel,
+	isAuthEnabled
+} from '$lib/server/auth.js';
 
 export const handle: Handle = async ({ event, resolve }) => {
 	const start = Date.now();
@@ -29,6 +36,27 @@ export const handle: Handle = async ({ event, resolve }) => {
 		event.locals.aem = { token, authorHost };
 	}
 
+	const env = resolveAppEnv(event.platform?.env);
+	const authConfig = authConfigFromEnv(env);
+	const authLevel = await getRouteAuthLevel(
+		event.url.pathname,
+		event.request.method,
+		event.url,
+		event.request
+	);
+	const authResult = await authenticateRequest(
+		event.request,
+		event.locals,
+		authConfig,
+		authLevel
+	);
+	if (!authResult.ok) {
+		const hint = isAuthEnabled(authConfig)
+			? 'Sign in via Cloudflare Access, send Authorization: Bearer, or open from Universal Editor.'
+			: 'Authentication is not configured.';
+		throw error(401, hint);
+	}
+
 	const response = await resolve(event);
 
 	// Structured log line — picked up by Cloudflare observability
@@ -37,7 +65,8 @@ export const handle: Handle = async ({ event, resolve }) => {
 			method: event.request.method,
 			path: event.url.pathname,
 			status: response.status,
-			durationMs: Date.now() - start
+			durationMs: Date.now() - start,
+			...(authResult.method !== 'disabled' ? { auth: authResult.method } : {})
 		})
 	);
 

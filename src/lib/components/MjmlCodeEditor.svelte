@@ -33,6 +33,7 @@
 	let hostEl = $state<HTMLDivElement | null>(null);
 	let view: EditorView | null = null;
 	let syncingFromOutside = false;
+	let lastSelection = { from: 0, to: 0 };
 
 	const mjmlHighlight = HighlightStyle.define([
 		{ tag: tags.tagName, color: '#8250df', fontWeight: '600' },
@@ -106,6 +107,10 @@
 			EditorView.lineWrapping,
 			placeholder(placeholderText),
 			EditorView.updateListener.of((update) => {
+				if (update.selectionSet) {
+					const main = update.state.selection.main;
+					lastSelection = { from: main.from, to: main.to };
+				}
 				if (!update.docChanged || syncingFromOutside) return;
 				const next = update.state.doc.toString();
 				if (next !== value) {
@@ -155,6 +160,20 @@
 		});
 		syncingFromOutside = false;
 	});
+
+	export async function insertAtCursor(text: string) {
+		await tick();
+		if (!view) return;
+		const main = view.state.selection.main;
+		const from = view.hasFocus ? main.from : lastSelection.from;
+		const to = view.hasFocus ? main.to : lastSelection.to;
+		view.dispatch({
+			changes: { from, to, insert: text },
+			selection: { anchor: from + text.length },
+			scrollIntoView: true
+		});
+		view.focus();
+	}
 
 	export async function focusAt(position: number) {
 		await tick();

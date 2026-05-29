@@ -12,6 +12,7 @@ import { loadTemplate } from '$lib/templates/service.js';
 import { resolveAppEnv } from '$lib/server/app-env.js';
 import { transformTemplateForAjo } from '$lib/ajo/export-pipeline.js';
 import { createContentTemplate, updateContentTemplate } from '$lib/ajo/client.js';
+import { buildAjoEmailHtmlTemplatePayload } from '$lib/ajo/types.js';
 import {
 	getDb,
 	getRemoteTemplateId,
@@ -154,12 +155,12 @@ async function runAjoExport(
 		opts.ajoTemplateId ??
 		(await getRemoteTemplateId(db, scope, campaign.cfUuid, campaignId));
 
-	const payload = {
+	const payload = buildAjoEmailHtmlTemplatePayload({
 		name,
-		channel: 'email' as const,
-		contentType: 'text/html' as const,
-		body: transform.html
-	};
+		html: transform.html,
+		description: campaign.name ? `AEM campaign ${campaignId}` : undefined,
+		origin: 'aem'
+	});
 
 	const pushResult = existingId
 		? await updateContentTemplate(existingId, payload, env as AppEnv)

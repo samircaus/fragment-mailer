@@ -21,8 +21,7 @@
       "required": true,
       "binding": "cf.emailCopy",
       "renderBinding": "cf.emailCopyHtml",
-      "aueProp": "emailBody",
-      "modelId": "offer-body"
+      "modelId": "offer-email-copy"
     },
     "ctaLabel": {
       "type": "text",

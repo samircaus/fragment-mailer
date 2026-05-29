@@ -8,12 +8,13 @@ import { aemClientOptions, authorHostUrl, publishHostRepoId, type AppEnv } from 
 import { compileMJML } from '$lib/render/mjml.js';
 import {
 	buildLetFragmentTag,
+	hoistLetFragmentTagsInHtml,
 	parseLoadTags,
-	replaceLoadTags,
+	stripLoadTags,
 	type ParsedLoadTag
 } from '$lib/render/ajo-load-tags.js';
 import { resolveLoadTagRefs } from '$lib/render/ajo-ref-resolver.js';
-import { wrapAjoControlTagsForMjml } from '$lib/render/ajo-export.js';
+import { normalizeAjoPersonalizationSyntax, wrapAjoControlTagsForMjml } from '$lib/render/ajo-export.js';
 import { ensureLoadTagsInTemplate } from '$lib/render/ajo-load-inject.js';
 import type { TemplateDefinition } from '$lib/templates/registry.js';
 import type { AuthorFragment } from '$lib/types/aem.js';
@@ -91,20 +92,21 @@ export async function transformTemplateForAjo(input: AjoTransformInput): Promise
 		env
 	);
 
-	const replacements = loadTags.flatMap((tag) => {
+	const letTags = loadTags.flatMap((tag) => {
 		const match = resolved.find((r) => r.varName === tag.varName);
 		if (!match) return [];
-		return [
-			{
-				raw: tag.raw,
-				letTag: buildLetFragmentTag(tag.varName, match.uuid, repoId)
-			}
-		];
+		return [buildLetFragmentTag(tag.varName, match.uuid, repoId)];
 	});
 
-	const transformedMjml = replaceLoadTags(preparedMjml, replacements);
+	const transformedMjml = stripLoadTags(
+		preparedMjml,
+		loadTags.map((tag) => tag.raw)
+	);
 	const wrappedMjml = wrapAjoControlTagsForMjml(transformedMjml);
 	const compileResult = await compileMJML(wrappedMjml, { minify: false });
+	const html = normalizeAjoPersonalizationSyntax(
+		hoistLetFragmentTagsInHtml(compileResult.html ?? '', letTags)
+	);
 
 	const validationErrors = await validateAjoExport(
 		{
@@ -126,7 +128,7 @@ export async function transformTemplateForAjo(input: AjoTransformInput): Promise
 	}
 
 	return {
-		html: compileResult.html ?? '',
+		html,
 		repoId,
 		loadTags,
 		injectedLoadTags: injected,

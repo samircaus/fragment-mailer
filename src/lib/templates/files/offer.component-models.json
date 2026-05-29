@@ -12,12 +12,12 @@
     ]
   },
   {
-    "id": "offer-body",
+    "id": "offer-email-copy",
     "fields": [
       {
         "component": "richtext",
-        "name": "emailBody",
-        "label": "Email Body",
+        "name": "emailCopy",
+        "label": "Email Copy",
         "valueType": "string",
         "required": true
       }

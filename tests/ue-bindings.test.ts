@@ -14,8 +14,7 @@ const offerDefinition = {
 			required: true,
 			binding: 'cf.emailCopy',
 			renderBinding: 'cf.emailCopyHtml',
-			aueProp: 'emailBody',
-			modelId: 'offer-body'
+			modelId: 'offer-email-copy'
 		}
 	},
 	profileTokens: [],
@@ -35,9 +34,9 @@ describe('buildUEBindings', () => {
 		expect(emailBinding).toEqual({
 			fieldPath: 'cf.emailCopyHtml',
 			cfPath: '/content/dam/offers/spring',
-			fieldName: 'emailBody',
+			fieldName: 'emailCopy',
 			fieldType: 'richtext',
-			modelId: 'offer-body'
+			modelId: 'offer-email-copy'
 		});
 	});
 });
@@ -50,13 +49,13 @@ describe('injectUEAttributes — richtext', () => {
 			{
 				fieldPath: 'cf.emailCopyHtml',
 				cfPath: '/content/dam/offers/spring',
-				fieldName: 'emailBody',
+				fieldName: 'emailCopy',
 				fieldType: 'richtext',
-				modelId: 'offer-body'
+				modelId: 'offer-email-copy'
 			}
 		]);
-		expect(out).toContain('data-aue-prop="emailBody"');
+		expect(out).toContain('data-aue-prop="emailCopy"');
 		expect(out).toContain('data-aue-type="richtext"');
-		expect(out).toContain('data-aue-model="offer-body"');
+		expect(out).toContain('data-aue-model="offer-email-copy"');
 	});
 });

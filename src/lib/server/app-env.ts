@@ -30,7 +30,11 @@ export function resolveAppEnv(platform?: AppEnv): AppEnv | undefined {
 		AJO_SANDBOX: pick('AJO_SANDBOX', platform),
 		AJO_SANDBOX_NAME: pick('AJO_SANDBOX_NAME', platform),
 		AJO_IMS_CLIENT_ID: pick('AJO_IMS_CLIENT_ID', platform),
-		AJO_IMS_CLIENT_SECRET: pick('AJO_IMS_CLIENT_SECRET', platform)
+		AJO_IMS_CLIENT_SECRET: pick('AJO_IMS_CLIENT_SECRET', platform),
+		AJO_IMS_SCOPES: pick('AJO_IMS_SCOPES', platform),
+		APP_AUTH_SECRET: pick('APP_AUTH_SECRET', platform),
+		CF_ACCESS_TEAM_DOMAIN: pick('CF_ACCESS_TEAM_DOMAIN', platform),
+		CF_ACCESS_AUD: pick('CF_ACCESS_AUD', platform)
 	};
 
 	const hasValue = Object.values(merged).some((v) => v !== undefined && v !== '');

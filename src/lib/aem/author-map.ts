@@ -1,3 +1,4 @@
+import { normalizeCfModelPath } from './cf-model-scope.js';
 import { contentFragmentToCFFragment } from './client.js';
 import type { CFFragment, ContentFragmentItem } from './types.js';
 import type { AuthorFragment } from '$lib/types/aem.js';
@@ -33,7 +34,7 @@ export function authorFragmentToCFFragment(fragment: AuthorFragment): CFFragment
 		modified: fragment.modified?.at,
 		fields: flatFields,
 		_model: {
-			_path: fragment.model?.id ?? '',
+			_path: normalizeCfModelPath(fragment.model?.id ?? ''),
 			title: fragment.model?.title ?? 'Content Fragment'
 		},
 		_variation: 'master',

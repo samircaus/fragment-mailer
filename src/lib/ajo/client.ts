@@ -1,13 +1,17 @@
 // AJO Journey Content Templates API client.
 //
-// TODO(spike): Verify request body shape, x-sandbox-name vs x-sandbox-id, and whether
-// inline fragment(id='aem:UUID?repoId=...') survives API push — compare with DevTools
-// capture from AJO UI when creating an email template with an AEM CF reference.
+// TODO(spike): Verify whether inline fragment(id='aem:UUID?repoId=...') survives API push —
+// compare with DevTools capture from AJO UI when creating an email template with an AEM CF reference.
+// PUT updates may require If-Match (etag) after a GET of the existing template.
 
 import { getAjoAccessToken, resetAjoAccessTokenCache } from '$lib/auth/ajo-token-provider.js';
 import type { AppEnv } from '$lib/aem/env.js';
 import { ajoImsClientId, ajoSandboxName } from '$lib/aem/env.js';
-import type { AJOContentTemplatePayload, AJOContentTemplateResult } from './types.js';
+import {
+	AJO_TEMPLATE_CONTENT_TYPE,
+	type AJOContentTemplatePayload,
+	type AJOContentTemplateResult
+} from './types.js';
 
 export interface AJOClientOptions {
 	imsOrg: string;
@@ -29,9 +33,9 @@ export interface AjoRequestFailure {
 	request?: {
 		templateId?: string;
 		payloadName?: string;
-		channel?: string;
-		contentType?: string;
-		bodyLength?: number;
+		templateType?: string;
+		channels?: string[];
+		htmlLength?: number;
 	};
 	attempt?: number;
 	retried401?: boolean;
@@ -76,10 +80,58 @@ function payloadMeta(payload: AJOContentTemplatePayload, templateId?: string) {
 	return {
 		templateId,
 		payloadName: payload.name,
-		channel: payload.channel,
-		contentType: payload.contentType,
-		bodyLength: payload.body?.length ?? 0
+		templateType: payload.templateType,
+		channels: payload.channels,
+		htmlLength: payload.template.html?.length ?? 0
 	};
+}
+
+function templateIdFromPath(path: string): string | undefined {
+	const match = path.match(/\/templates\/([^/?]+)$/);
+	return match?.[1] ? decodeURIComponent(match[1]) : undefined;
+}
+
+function templateIdFromLocation(location: string): string | undefined {
+	const trimmed = location.trim();
+	if (!trimmed) return undefined;
+	try {
+		const url = new URL(trimmed, DEFAULT_BASE_URL);
+		return templateIdFromPath(url.pathname);
+	} catch {
+		return templateIdFromPath(trimmed.startsWith('/') ? trimmed : `/${trimmed}`);
+	}
+}
+
+async function parseSuccessResponse(
+	res: Response,
+	method: string,
+	path: string
+): Promise<AJOContentTemplateResult> {
+	const status = method === 'PUT' ? 'updated' : 'created';
+	const pathTemplateId = templateIdFromPath(path);
+
+	if (res.status === 204) {
+		return { id: pathTemplateId ?? '', status };
+	}
+
+	const headerId =
+		res.headers.get('x-resource-id')?.trim() ||
+		(res.headers.get('location') && templateIdFromLocation(res.headers.get('location')!)) ||
+		'';
+
+	const contentType = res.headers.get('content-type') ?? '';
+	if (contentType.includes('json')) {
+		const json = (await res.json()) as Record<string, unknown>;
+		const id =
+			headerId ||
+			(typeof json.id === 'string' && json.id) ||
+			(typeof json.templateId === 'string' && json.templateId) ||
+			pathTemplateId ||
+			'';
+		return { id, status };
+	}
+
+	return { id: headerId || pathTemplateId || '', status };
 }
 
 function logAjoFailure(
@@ -187,8 +239,7 @@ async function requestWithRetry(
 		res = await fetch(url, {
 			method,
 			headers: {
-				'Content-Type': 'application/json',
-				Accept: 'application/json',
+				'Content-Type': AJO_TEMPLATE_CONTENT_TYPE,
 				Authorization: `Bearer ${opts.accessToken}`,
 				'x-api-key': opts.apiKey,
 				'x-gw-ims-org-id': opts.imsOrg,
@@ -289,18 +340,7 @@ async function requestWithRetry(
 		return failResult(`AJO ${method} failed ${res.status}: ${body}`, res.status, failure);
 	}
 
-	const json = (await res.json()) as Record<string, unknown>;
-	const id =
-		(typeof json.id === 'string' && json.id) ||
-		(typeof json.templateId === 'string' && json.templateId) ||
-		'';
-
-	return {
-		data: {
-			id,
-			status: method === 'PUT' ? 'updated' : 'created'
-		}
-	};
+	return { data: await parseSuccessResponse(res, method, path) };
 }
 
 function sleep(ms: number): Promise<void> {

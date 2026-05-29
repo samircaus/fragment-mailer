@@ -2,6 +2,7 @@
 // Uses OAuth bearer tokens; never call /adobe/contentFragments on Author.
 
 import { getAemAccessToken } from '$lib/auth/token-provider.js';
+import type { CfModelListItem } from './cf-model-scope.js';
 import type { AuthorFragment, AuthorFragmentList, AuthorModel } from '$lib/types/aem.js';
 import { authorFragmentToCFFragment, authorFragmentToListItem } from './author-map.js';
 import type { AEMClientOptions } from './client.js';
@@ -149,6 +150,37 @@ export async function fetchAuthorFragmentByPath(
 	);
 }
 
+export async function listAuthorModels(
+	opts: AEMClientOptions,
+	env?: AppEnv,
+	limit = 50
+): Promise<Result<CfModelListItem[]>> {
+	const items: CfModelListItem[] = [];
+	let cursor: string | undefined;
+
+	do {
+		const url = new URL(`${sitesCfBase(opts)}/models`);
+		url.searchParams.set('limit', String(Math.min(Math.max(limit, 1), 50)));
+		url.searchParams.set('projection', 'minimal');
+		if (cursor) url.searchParams.set('cursor', cursor);
+
+		const res = await fetch(url.toString(), { headers: await authorHeaders(env) });
+		if (!res.ok) {
+			const snippet = await readResponseSnippet(res);
+			return { error: `AEM Author model list failed ${res.status}. Body: ${snippet}` };
+		}
+
+		const body = (await res.json()) as {
+			items?: CfModelListItem[];
+			cursor?: string;
+		};
+		items.push(...(body.items ?? []));
+		cursor = body.cursor;
+	} while (cursor);
+
+	return { data: items };
+}
+
 export async function fetchAuthorModel(
 	modelId: string,
 	opts: AEMClientOptions,
@@ -161,6 +193,36 @@ export async function fetchAuthorModel(
 		return { error: `AEM Author model fetch failed ${res.status} for id: ${modelId}. Body: ${snippet}` };
 	}
 	return { data: (await res.json()) as AuthorModel & { tags?: string[] } };
+}
+
+/** Resolve a CF model by AEM id or human-readable title/name (e.g. template cfModel "Offer"). */
+export async function resolveAuthorModel(
+	modelKey: string,
+	opts: AEMClientOptions,
+	env?: AppEnv
+): Promise<Result<AuthorModel & { tags?: string[] }>> {
+	const direct = await fetchAuthorModel(modelKey, opts, env);
+	if (direct.data) return direct;
+
+	const list = await listAuthorModels(opts, env);
+	if (list.error || !list.data) return direct;
+
+	const key = modelKey.trim().toLowerCase();
+	const match = list.data.find(
+		(item) =>
+			item.id === modelKey ||
+			item.title?.trim().toLowerCase() === key ||
+			item.name?.trim().toLowerCase() === key
+	);
+	if (!match?.id) {
+		return {
+			error:
+				direct.error ??
+				`No AEM CF model matched "${modelKey}". Use the model id from Author or set template cfModel to the model title.`
+		};
+	}
+
+	return fetchAuthorModel(match.id, opts, env);
 }
 
 /** Tags applied to a CF model (GET /cf/models/{id}/tags). */

@@ -40,9 +40,17 @@ export interface AppEnv {
 	/** AJO IMS OAuth client (separate from AEM) */
 	AJO_IMS_CLIENT_ID?: string;
 	AJO_IMS_CLIENT_SECRET?: string;
+	/** Comma-separated IMS scopes for AJO token (default includes projectedProductContext) */
+	AJO_IMS_SCOPES?: string;
 	AJO_SANDBOX?: string;
 	/** Experience Cloud hash tenant for CF editor links (URL segment after #/@). Default: psc */
 	AEM_CF_EDITOR_TENANT?: string;
+	/** Bearer secret for API auth (automation / complement to Cloudflare Access) */
+	APP_AUTH_SECRET?: string;
+	/** Cloudflare Access team domain, e.g. myteam.cloudflareaccess.com */
+	CF_ACCESS_TEAM_DOMAIN?: string;
+	/** Cloudflare Access application audience (AUD tag) */
+	CF_ACCESS_AUD?: string;
 }
 
 export function cfEditorTenant(env?: AppEnv): string {
@@ -113,10 +121,23 @@ export function authorHostUrl(env?: AppEnv): string {
 	return '';
 }
 
-/** Publish hostname for AJO fragment repoId (no protocol). */
-export function publishHostRepoId(env?: AppEnv): string {
-	const raw = env?.AEM_PUBLISH_HOST?.trim() || env?.AEM_BASE_URL?.trim() || '';
+function stripUrlToHostname(raw: string): string {
 	return raw.replace(/^https?:\/\//i, '').replace(/\/$/, '');
+}
+
+/** Publish hostname for AJO fragment repoId (no protocol). Never returns an Author host. */
+export function publishHostRepoId(env?: AppEnv): string {
+	const explicit = env?.AEM_PUBLISH_HOST?.trim();
+	if (explicit) return stripUrlToHostname(explicit);
+
+	const baseHost = stripUrlToHostname(env?.AEM_BASE_URL?.trim() ?? '');
+	if (!baseHost) return '';
+
+	if (/^author[-.]/i.test(baseHost)) {
+		return baseHost.replace(/^author/i, 'publish');
+	}
+
+	return baseHost;
 }
 
 export function ajoSandboxName(env?: AppEnv): string {

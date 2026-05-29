@@ -5,6 +5,8 @@
 	import { type Persona } from '$lib/personas/samples.js';
 	import type { BrandListItem, PersonaListItem } from '$lib/personas/types.js';
 	import PreviewProfilesManager from '$lib/components/PreviewProfilesManager.svelte';
+	import TemplateFieldsManager from '$lib/components/TemplateFieldsManager.svelte';
+	import type { CfInsertField } from '$lib/templates/cf-insert.js';
 	import { displayStatusHint, displayStatusLabel } from '$lib/db/attach-email-status.js';
 	import type { EmailStatusInfo } from '$lib/db/email-status-types.js';
 	import MjmlCodeEditor from '$lib/components/MjmlCodeEditor.svelte';
@@ -74,6 +76,9 @@
 	let selectedBrandId = $state('acme-corp');
 	let previewActionsOpen = $state(false);
 	let previewManagerOpen = $state(false);
+	let templateFieldsManagerOpen = $state(false);
+	let contentModelFields = $state<CfInsertField[]>([]);
+	let cfInsertMenuOpen = $state(false);
 
 	// New template inline form
 	let showNewForm = $state(false);
@@ -201,7 +206,7 @@
 			previewChrome = storedChrome;
 		}
 
-		await Promise.all([loadCampaign(), loadTemplates(), loadPreviewContext()]);
+		await Promise.all([loadCampaign(), loadTemplates(), loadPreviewContext(), loadContentModelFields()]);
 		if (campaign?.templateId) {
 			selectedTemplateId = resolveTemplateSelectionId(campaign.templateId, templates);
 		}
@@ -306,6 +311,29 @@
 		} finally {
 			isLoading = false;
 		}
+	}
+
+	async function loadContentModelFields() {
+		if (!campaignId) return;
+		try {
+			const res = await fetch(`/api/campaigns/${encodeURIComponent(campaignId)}/content-model`);
+			if (!res.ok) return;
+			const data = (await res.json()) as { fields?: CfInsertField[] };
+			contentModelFields = data.fields ?? [];
+		} catch (err) {
+			console.error('Failed to load content model fields:', err);
+		}
+	}
+
+	async function insertCfField(field: CfInsertField) {
+		cfInsertMenuOpen = false;
+		const snippet = field.snippet;
+		if (activeTab === 'code' && mjmlEditor) {
+			await mjmlEditor.insertAtCursor(snippet);
+		} else {
+			mjmlCode = `${mjmlCode}${mjmlCode.endsWith('\n') || !mjmlCode ? '' : '\n'}${snippet}`;
+		}
+		isDirty = true;
 	}
 
 	async function loadTemplates() {
@@ -923,6 +951,11 @@
 		previewManagerOpen = true;
 	}
 
+	function openTemplateFieldsManager() {
+		templateActionsOpen = false;
+		templateFieldsManagerOpen = true;
+	}
+
 	type PreviewResourceItem = PersonaListItem | BrandListItem;
 
 	function handlePersonasChange(detail: { items: PreviewResourceItem[]; selectedId: string }) {
@@ -1034,6 +1067,7 @@
 		const target = e.target;
 		if (target instanceof Element && target.closest('.add-menu, .add-child-btn, .template-actions, .preview-actions')) return;
 		addMenuNode = null;
+		cfInsertMenuOpen = false;
 		closeTemplatePickers();
 		closePreviewPickers();
 	}}
@@ -1044,6 +1078,9 @@
 		}
 		if (e.key === 'Escape' && previewManagerOpen) {
 			previewManagerOpen = false;
+		}
+		if (e.key === 'Escape' && templateFieldsManagerOpen) {
+			templateFieldsManagerOpen = false;
 		}
 	}}
 />
@@ -1358,6 +1395,17 @@
 										type="button"
 										class="dropdown-option dropdown-option-compact"
 										role="menuitem"
+										disabled={!selectedTemplateId}
+										onclick={openTemplateFieldsManager}
+									>
+										Content model
+									</button>
+								</li>
+								<li role="none">
+									<button
+										type="button"
+										class="dropdown-option dropdown-option-compact"
+										role="menuitem"
 										disabled={saveVersionStatus === 'saving' || !selectedTemplateId}
 										onclick={handleSaveAsNewVersion}
 									>
@@ -1452,6 +1500,37 @@
 			<div class="panel-content">
 				{#if activeTab === 'code'}
 					<div class="editor-wrap">
+						{#if contentModelFields.length > 0}
+							<div class="cf-insert-wrap">
+								<button
+									type="button"
+									class="cf-insert-btn"
+									aria-expanded={cfInsertMenuOpen}
+									onmousedown={(e) => e.preventDefault()}
+									onclick={(e) => {
+										e.stopPropagation();
+										cfInsertMenuOpen = !cfInsertMenuOpen;
+									}}
+								>
+									+ Insert field
+								</button>
+								{#if cfInsertMenuOpen}
+									<div class="cf-insert-menu" onclick={stopEventPropagation} onkeydown={stopEventPropagation}>
+										{#each contentModelFields as field (field.name)}
+											<button
+												type="button"
+												class="cf-insert-item"
+												onmousedown={(e) => e.preventDefault()}
+												onclick={() => insertCfField(field)}
+											>
+												<span class="cf-insert-label">{field.label}</span>
+												<code class="cf-insert-token">{`{{${field.token}}}`}</code>
+											</button>
+										{/each}
+									</div>
+								{/if}
+							</div>
+						{/if}
 						{#if templateLoadError}
 							<div class="editor-error">{templateLoadError}</div>
 						{:else}
@@ -1787,60 +1866,50 @@
 					<span>Loading…</span>
 				</div>
 			{:else}
-				{#if previewEnvelope}
-					<div
-						class="preview-envelope"
-						class:preview-envelope-warn={previewEnvelope.unresolved.length > 0}
-						role="group"
-						aria-label="Email envelope preview"
-					>
-						<p class="preview-envelope-line">
-							<span class="preview-envelope-item">
-								<span class="preview-envelope-label">Subject</span>
-								<span class="preview-envelope-value" title={previewEnvelope.subject}>
-									{previewEnvelope.subject || '—'}
-								</span>
-							</span>
-							<span class="preview-envelope-sep" aria-hidden="true">·</span>
-							<span class="preview-envelope-item">
-								<span class="preview-envelope-label">From</span>
-								<span class="preview-envelope-value" title={previewEnvelope.from}>
-									{previewEnvelope.from || '—'}
-								</span>
-							</span>
-							<span class="preview-envelope-sep" aria-hidden="true">·</span>
-							<span class="preview-envelope-item">
-								<span class="preview-envelope-label">Preheader</span>
-								<span class="preview-envelope-value" title={previewEnvelope.preheader}>
-									{previewEnvelope.preheader || '—'}
-								</span>
-							</span>
-						</p>
-						{#if previewEnvelope.unresolved.length > 0}
-							<p class="preview-envelope-hint">
-								Unresolved:
-								{previewEnvelope.unresolved.map((p) => `{{${p}}}`).join(', ')}
-							</p>
-						{/if}
-					</div>
-				{/if}
-
 				<div class="preview-stage" class:preview-stage-with-envelope={!!previewEnvelope}>
 					<div
-						class="preview-frame-shell"
+						class="preview-column"
 						style:width="{previewViewport === 'mobile'
 							? PREVIEW_MOBILE_WIDTH
 							: PREVIEW_DESKTOP_WIDTH}px"
 					>
-						<iframe
-							bind:this={iframeEl}
-							src={previewUrl}
-							title="Email preview"
-							allow="same-origin"
-							scrolling="no"
-							class="preview-iframe"
-							onload={onPreviewIframeLoad}
-						></iframe>
+						{#if previewEnvelope}
+							<div
+								class="preview-envelope"
+								class:preview-envelope-warn={previewEnvelope.unresolved.length > 0}
+								role="group"
+								aria-label="Email envelope preview"
+							>
+								<p class="preview-envelope-subject" title={previewEnvelope.subject}>
+									{previewEnvelope.subject || '—'}
+								</p>
+								<p class="preview-envelope-sender" title={previewEnvelope.from}>
+									{previewEnvelope.from || '—'}
+								</p>
+								{#if previewEnvelope.preheader}
+									<p class="preview-envelope-preheader" title={previewEnvelope.preheader}>
+										{previewEnvelope.preheader}
+									</p>
+								{/if}
+								{#if previewEnvelope.unresolved.length > 0}
+									<p class="preview-envelope-hint">
+										Unresolved:
+										{previewEnvelope.unresolved.map((p) => `{{${p}}}`).join(', ')}
+									</p>
+								{/if}
+							</div>
+						{/if}
+						<div class="preview-frame-shell">
+							<iframe
+								bind:this={iframeEl}
+								src={previewUrl}
+								title="Email preview"
+								allow="same-origin"
+								scrolling="no"
+								class="preview-iframe"
+								onload={onPreviewIframeLoad}
+							></iframe>
+						</div>
 					</div>
 				</div>
 			{/if}
@@ -1858,6 +1927,14 @@
 	onclose={() => (previewManagerOpen = false)}
 	onpersonaschange={handlePersonasChange}
 	onbrandschange={handleBrandsChange}
+/>
+
+<TemplateFieldsManager
+	open={templateFieldsManagerOpen}
+	campaignId={campaignId}
+	authorUrl={$page.data.aem.authorUrl}
+	cfEditorTenant={$page.data.aem.cfEditorTenant}
+	onclose={() => (templateFieldsManagerOpen = false)}
 />
 
 {#if ajoErrorDialogOpen}
@@ -2916,6 +2993,72 @@
 		color: #5b5bd6;
 	}
 
+	.cf-insert-wrap {
+		position: absolute;
+		right: 14px;
+		top: 8px;
+		z-index: 6;
+	}
+
+	.cf-insert-btn {
+		padding: 0;
+		border: none;
+		background: transparent;
+		font-size: 11px;
+		font-weight: 500;
+		color: rgba(113, 113, 122, 0.55);
+		cursor: pointer;
+		transition: color 0.12s;
+	}
+
+	.cf-insert-btn:hover {
+		color: #5b5bd6;
+	}
+
+	.cf-insert-menu {
+		position: absolute;
+		right: 0;
+		top: calc(100% + 6px);
+		min-width: 220px;
+		max-width: 320px;
+		max-height: 240px;
+		overflow: auto;
+		padding: 4px;
+		border: 1px solid #e4e4e7;
+		border-radius: 8px;
+		background: #fff;
+		box-shadow: 0 8px 24px rgb(0 0 0 / 0.12);
+	}
+
+	.cf-insert-item {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 2px;
+		width: 100%;
+		padding: 6px 8px;
+		border: none;
+		border-radius: 5px;
+		background: transparent;
+		text-align: left;
+		cursor: pointer;
+	}
+
+	.cf-insert-item:hover {
+		background: #f4f4f5;
+	}
+
+	.cf-insert-label {
+		font-size: 12px;
+		font-weight: 500;
+		color: #18181b;
+	}
+
+	.cf-insert-token {
+		font-size: 10px;
+		color: #71717a;
+	}
+
 	.mjml-editor {
 		flex: 1 1 0;
 		min-height: 0;
@@ -3425,80 +3568,69 @@
 	}
 
 	.preview-envelope {
-		flex-shrink: 0;
-		padding: 14px 24px 0;
-		max-width: 100%;
+		padding: 0 0 14px;
 	}
 
-	.preview-envelope-line {
+	.preview-envelope-subject {
 		margin: 0;
-		display: flex;
-		flex-wrap: wrap;
-		align-items: baseline;
-		gap: 6px 10px;
-		font-size: 11px;
-		line-height: 1.5;
-		color: #71717a;
-	}
-
-	.preview-chrome-dark .preview-envelope-line {
-		color: #a1a1aa;
-	}
-
-	.preview-envelope-item {
-		display: inline-flex;
-		align-items: baseline;
-		gap: 5px;
-		min-width: 0;
-		max-width: 100%;
-	}
-
-	.preview-envelope-sep {
-		color: #d4d4d8;
-		user-select: none;
-	}
-
-	.preview-chrome-dark .preview-envelope-sep {
-		color: #52525b;
-	}
-
-	.preview-envelope-label {
-		flex-shrink: 0;
-		font-size: 10px;
+		font-size: 15px;
 		font-weight: 600;
-		letter-spacing: 0.03em;
-		text-transform: uppercase;
-		color: #a1a1aa;
-	}
-
-	.preview-chrome-dark .preview-envelope-label {
-		color: #71717a;
-	}
-
-	.preview-envelope-value {
-		color: #52525b;
-		font-weight: 500;
+		line-height: 1.35;
+		letter-spacing: -0.01em;
+		color: #18181b;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
-		max-width: min(28vw, 320px);
 	}
 
-	.preview-chrome-dark .preview-envelope-value {
+	.preview-chrome-dark .preview-envelope-subject {
+		color: #fafafa;
+	}
+
+	.preview-envelope-sender {
+		margin: 4px 0 0;
+		font-size: 13px;
+		line-height: 1.4;
+		color: #52525b;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.preview-chrome-dark .preview-envelope-sender {
 		color: #d4d4d8;
 	}
 
-	.preview-envelope-warn .preview-envelope-value {
+	.preview-envelope-preheader {
+		margin: 2px 0 0;
+		font-size: 13px;
+		line-height: 1.4;
+		color: #a1a1aa;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.preview-chrome-dark .preview-envelope-preheader {
+		color: #71717a;
+	}
+
+	.preview-envelope-warn .preview-envelope-subject,
+	.preview-envelope-warn .preview-envelope-sender,
+	.preview-envelope-warn .preview-envelope-preheader {
 		color: #b45309;
 	}
 
-	.preview-chrome-dark .preview-envelope-warn .preview-envelope-value {
+	.preview-chrome-dark .preview-envelope-warn .preview-envelope-subject,
+	.preview-chrome-dark .preview-envelope-warn .preview-envelope-sender,
+	.preview-chrome-dark .preview-envelope-warn .preview-envelope-preheader {
 		color: #fbbf24;
 	}
 
 	.preview-envelope-hint {
-		margin: 6px 0 0;
-		font-size: 10px;
+		margin: 10px 0 0;
+		font-size: 11px;
+		line-height: 1.4;
 		color: #b45309;
 	}
 
@@ -3545,6 +3677,10 @@
 
 	.preview-stage-with-envelope {
 		padding-top: 20px;
+	}
+
+	.preview-column {
+		max-width: 100%;
 	}
 
 	.preview-frame-shell {

@@ -45,6 +45,8 @@ export interface AuthorFragmentList {
 
 export interface AuthorModel {
 	id: string;
+	path?: string;
+	name?: string;
 	title: string;
 	description?: string;
 	fields: AuthorModelField[];

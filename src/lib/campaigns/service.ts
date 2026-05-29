@@ -1,11 +1,27 @@
 import { fetchCampaignFragmentAtPath, fetchCampaignFragmentById, listCampaignFragments } from '$lib/aem/delivery.js';
-import { campaignsFolder, type AppEnv } from '$lib/aem/env.js';
+import { resolveAuthorModel } from '$lib/aem/author.js';
+import { normalizeCfModelPath } from '$lib/aem/cf-model-scope.js';
+import { aemClientOptions, authorHostUrl, campaignsFolder, type AppEnv } from '$lib/aem/env.js';
 import { normalizeCF } from '$lib/aem/client.js';
 import type { CFFragment } from '$lib/aem/types.js';
 import type { ContentFragmentItem } from '$lib/aem/types.js';
+import {
+	authorFieldToInsert,
+	fallbackFieldToInsert,
+	type CfInsertField
+} from '$lib/templates/cf-insert.js';
 import type { Campaign, CampaignSummary } from './registry.js';
 
 export type { CampaignSummary };
+
+export interface CampaignContentModel {
+	model: {
+		id: string;
+		title: string;
+		path: string;
+	};
+	fields: CfInsertField[];
+}
 
 type Result<T> = { data: T; error?: never } | { error: string; data?: never };
 
@@ -31,6 +47,61 @@ export async function getCampaignWithCF(
 	const fragment = fragmentResult.data;
 	const campaign = fragmentToCampaign(fragment, id);
 	return { data: { campaign, cf: normalizeCF(fragment) } };
+}
+
+export async function getCampaignContentModel(
+	id: string,
+	env?: AppEnv
+): Promise<Result<CampaignContentModel>> {
+	const fragmentResult = UUID_RE.test(id)
+		? await fetchCampaignFragmentById(id, env)
+		: await fetchCampaignFragmentAtPath(resolveCampaignPath(id, env), env);
+
+	if (fragmentResult.error || !fragmentResult.data) return fragmentResult;
+
+	const fragment = fragmentResult.data;
+	const modelPath = normalizeCfModelPath(fragment._model._path);
+	const modelTitle = fragment._model.title;
+	const modelKey = modelPath.split('/').filter(Boolean).pop() ?? modelTitle;
+
+	const authorBase = authorHostUrl(env);
+	if (authorBase) {
+		const resolved = await resolveAuthorModel(
+			modelKey,
+			aemClientOptions({ ...env, AEM_BASE_URL: authorBase }),
+			env
+		);
+		if (resolved.data) {
+			const authorModel = resolved.data as { path?: string };
+			return {
+				data: {
+					model: {
+						id: resolved.data.id,
+						title: resolved.data.title ?? modelTitle,
+						path: normalizeCfModelPath(authorModel.path ?? modelPath)
+					},
+					fields: resolved.data.fields.map(authorFieldToInsert)
+				}
+			};
+		}
+	}
+
+	const normalized = normalizeCF(fragment);
+	const skipKeys = new Set(['title', 'id']);
+	const fields = Object.keys(normalized.fields)
+		.filter((key) => !key.startsWith('_') && !skipKeys.has(key) && !key.endsWith('Html') && !key.endsWith('Url'))
+		.map((name) => fallbackFieldToInsert(name));
+
+	return {
+		data: {
+			model: {
+				id: modelKey,
+				title: modelTitle,
+				path: modelPath
+			},
+			fields
+		}
+	};
 }
 
 function resolveCampaignPath(id: string, env?: AppEnv): string {

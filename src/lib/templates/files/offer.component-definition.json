@@ -17,12 +17,12 @@
           }
         },
         {
-          "title": "Email Body",
-          "id": "offer-body",
+          "title": "Email Copy",
+          "id": "offer-email-copy",
           "plugins": {
             "aem": {
               "cf": {
-                "name": "EmailBody",
+                "name": "EmailCopy",
                 "cfModel": "Offer"
               }
             }
