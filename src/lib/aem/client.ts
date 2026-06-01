@@ -1,8 +1,10 @@
 // AEM Content Fragment Delivery API client.
 // Uses the Content Fragment Delivery OpenAPI on Publish:
 //   GET /adobe/contentFragments?path=...
-//   GET /adobe/contentFragments/{id}?references=direct-hydrated
+//   GET /adobe/contentFragments/{id}?references=all-hydrated
 
+import { normalizeFragmentFields } from './normalize-fields.js';
+import { DELIVERY_CF_REFERENCES } from './reference-fetch.js';
 import type {
 	CFDeliveryResponse,
 	CFFragment,
@@ -108,9 +110,9 @@ async function readResponseSnippet(res: Response): Promise<string> {
 	}
 }
 
-/** Fetch a single CF by UUID with direct reference hydration. */
+/** Fetch a single CF by UUID with nested reference hydration. */
 export async function fetchCFById(id: string, opts: AEMClientOptions): Promise<Result<CFFragment>> {
-	const url = `${opts.baseUrl}/adobe/contentFragments/${encodeURIComponent(id)}?references=direct-hydrated`;
+	const url = `${opts.baseUrl}/adobe/contentFragments/${encodeURIComponent(id)}?references=${DELIVERY_CF_REFERENCES}`;
 	const res = await fetch(url, { headers: deliveryHeaders(opts) });
 	if (!res.ok) {
 		return { error: `AEM CF fetch failed ${res.status} for id: ${id}` };
@@ -123,7 +125,7 @@ export async function fetchCFById(id: string, opts: AEMClientOptions): Promise<R
 // Fetch a single CF by its DAM path.
 // path format: /content/dam/email/en/campaigns/welcome-series-1
 export async function fetchCF(path: string, opts: AEMClientOptions): Promise<Result<CFFragment>> {
-	const url = `${opts.baseUrl}/adobe/contentFragments?path=${encodeURIComponent(path)}`;
+	const url = `${opts.baseUrl}/adobe/contentFragments?path=${encodeURIComponent(path)}&references=${DELIVERY_CF_REFERENCES}`;
 	const res = await fetch(url, { headers: deliveryHeaders(opts) });
 	if (!res.ok) {
 		return { error: `AEM CF fetch failed ${res.status} for path: ${path}` };
@@ -150,47 +152,14 @@ export function normalizeCF(fragment: CFFragment): ResolvedCFData {
 	const version =
 		_metadata?.stringMetadata?.find((m) => m.name === 'cq:lastModified')?.value ?? 'unknown';
 
-	const cleanFields: Record<string, unknown> = {};
+	const rawFields: Record<string, unknown> = {};
 	for (const [key, value] of Object.entries(fields)) {
 		if (!key.startsWith('_') && key !== 'id') {
-			cleanFields[key] = value;
+			rawFields[key] = value;
 		}
 	}
 
-	// Normalize common polymorphic fields so templates can render a stable shape.
-	// AEM may return rich text/image fields as strings (GraphQL) or hydrated objects (Delivery API).
-	const emailCopy = cleanFields.emailCopy;
-	if (typeof emailCopy === 'string') {
-		cleanFields.emailCopyHtml = emailCopy;
-	} else if (emailCopy && typeof emailCopy === 'object') {
-		const html = (emailCopy as Record<string, unknown>).html;
-		if (typeof html === 'string') {
-			cleanFields.emailCopyHtml = html;
-		}
-	}
-
-	const bannerImage = cleanFields.bannerImage;
-	if (typeof bannerImage === 'string') {
-		cleanFields.bannerImageUrl = bannerImage;
-	} else if (bannerImage && typeof bannerImage === 'object') {
-		const image = bannerImage as Record<string, unknown>;
-		const url =
-			(typeof image._publishUrl === 'string' && image._publishUrl) ||
-			(typeof image._dynamicUrl === 'string' && image._dynamicUrl) ||
-			(typeof image._path === 'string' && image._path) ||
-			undefined;
-		if (url) {
-			cleanFields.bannerImageUrl = url;
-		}
-	}
-
-	// Flatten derived values onto base CF field names for template/AJO tokens.
-	if (cleanFields.bannerImageUrl !== undefined) {
-		cleanFields.bannerImage = cleanFields.bannerImageUrl;
-	}
-	if (cleanFields.emailCopyHtml !== undefined) {
-		cleanFields.emailCopy = cleanFields.emailCopyHtml;
-	}
+	const cleanFields = normalizeFragmentFields(rawFields);
 
 	return {
 		path: _path,
@@ -251,7 +220,7 @@ function extractNestedReferences(item: ContentFragmentItem): Record<string, unkn
 	]);
 	const out: Record<string, unknown> = {};
 	for (const [key, value] of Object.entries(item)) {
-		if (!skip.has(key) && typeof value === 'object' && value !== null && !Array.isArray(value)) {
+		if (!skip.has(key) && typeof value === 'object' && value !== null) {
 			out[key] = value;
 		}
 	}

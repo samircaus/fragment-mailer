@@ -6,8 +6,9 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 
 import { normalizeCF } from '$lib/aem/client.js';
+import { buildRenderCfContext } from '$lib/render/cf-context.js';
 import { fetchCampaignFragmentAtPath } from '$lib/aem/delivery.js';
-import type { AppEnv } from '$lib/aem/env.js';
+import { aemAssetBaseUrl, type AppEnv } from '$lib/aem/env.js';
 import { resolveAppEnv } from '$lib/server/app-env.js';
 import type { CFFragment, ResolvedCFData } from '$lib/aem/types.js';
 import { loadTemplate } from '$lib/templates/service.js';
@@ -55,7 +56,7 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 	const flatProfile = flattenPersona(persona);
 
 	const context = {
-		cf: buildCFContext(primaryCF.fields, referencedCFs),
+		cf: buildCFContext(primaryCF.fields, referencedCFs, aemAssetBaseUrl(env)),
 		profile: flatProfile,
 		preserveProfile: true,
 		static: { year: new Date().getFullYear() }
@@ -147,13 +148,12 @@ async function resolveReferencedCFs(
 
 function buildCFContext(
 	fields: Record<string, unknown>,
-	referencedCFs: ResolvedCFData[]
+	referencedCFs: ResolvedCFData[],
+	assetBaseUrl?: string
 ): Record<string, unknown> {
-	const context: Record<string, unknown> = { ...fields };
+	const context = buildRenderCfContext(fields, assetBaseUrl);
 
-	// Merge referenced CF fields so {{cf.featuredOffer.headline}} resolves correctly.
-	// The referenced CF's field data is already embedded in the primary CF value object
-	// (AEM embeds referenced fragment data inline in CF Delivery responses).
+	// Merge when hydration was incomplete (reference is path-only).
 	for (const refCF of referencedCFs) {
 		const refName = refCF.path.split('/').pop();
 		if (refName && context[refName] && typeof context[refName] === 'object') {

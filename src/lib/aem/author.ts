@@ -6,6 +6,7 @@ import type { CfModelListItem } from './cf-model-scope.js';
 import type { AuthorFragment, AuthorFragmentList, AuthorModel } from '$lib/types/aem.js';
 import { authorFragmentToCFFragment, authorFragmentToListItem } from './author-map.js';
 import type { AEMClientOptions } from './client.js';
+import { authorFragmentQueryParams, AUTHOR_CF_REFERENCES } from './reference-fetch.js';
 import type { AppEnv } from './env.js';
 import type { CFFragment, ContentFragmentItem } from './types.js';
 
@@ -70,7 +71,7 @@ export async function fetchAuthorFragmentRawById(
 	opts: AEMClientOptions,
 	env?: AppEnv
 ): Promise<Result<AuthorFragment>> {
-	const qs = new URLSearchParams({ references: 'all-hydrated' });
+	const qs = authorFragmentQueryParams(env);
 	const url = `${sitesCfBase(opts)}/fragments/${encodeURIComponent(id)}?${qs}`;
 	const res = await fetch(url, { headers: await authorHeaders(env) });
 	if (!res.ok) {
@@ -89,6 +90,7 @@ export async function fetchAuthorFragmentRawByPath(
 ): Promise<Result<AuthorFragment>> {
 	const url = new URL(`${sitesCfBase(opts)}/fragments`);
 	url.searchParams.set('path', path);
+	url.searchParams.set('references', AUTHOR_CF_REFERENCES);
 
 	const res = await fetch(url, { headers: await authorHeaders(env) });
 	if (!res.ok) {
@@ -97,21 +99,17 @@ export async function fetchAuthorFragmentRawByPath(
 	}
 
 	const body: unknown = await res.json();
-	if (body && typeof body === 'object' && 'id' in body && 'path' in body && !('items' in body)) {
-		return { data: body as AuthorFragment };
-	}
-
 	const items = extractAuthorList(body as AuthorFragmentList | AuthorFragment[]);
-	const match = items.find((f) => f.path === path) ?? items[0];
+	const match =
+		(body && typeof body === 'object' && 'id' in body && 'path' in body && !('items' in body)
+			? (body as AuthorFragment)
+			: undefined) ?? items.find((f) => f.path === path) ?? items[0];
 
 	if (!match?.id) {
 		return { error: `No CF found at path: ${path}` };
 	}
 
-	if (match.fields?.length) {
-		return { data: match };
-	}
-
+	// List/path responses are often shallow — always load by id with full reference depth.
 	return fetchAuthorFragmentRawById(match.id, opts, env);
 }
 
@@ -120,34 +118,12 @@ export async function fetchAuthorFragmentByPath(
 	opts: AEMClientOptions,
 	env?: AppEnv
 ): Promise<Result<CFFragment>> {
-	const url = new URL(`${sitesCfBase(opts)}/fragments`);
-	url.searchParams.set('path', path);
+	const raw = await fetchAuthorFragmentRawByPath(path, opts, env);
+	if (raw.error || !raw.data) return raw;
 
-	const res = await fetch(url, { headers: await authorHeaders(env) });
-	if (!res.ok) {
-		const snippet = await readResponseSnippet(res);
-		return { error: `AEM Author CF fetch failed ${res.status} for path: ${path}. Body: ${snippet}` };
-	}
-
-	const body: unknown = await res.json();
-	if (body && typeof body === 'object' && 'id' in body && 'path' in body && !('items' in body)) {
-		return { data: authorFragmentToCFFragment(body as AuthorFragment) };
-	}
-
-	const items = extractAuthorList(body as AuthorFragmentList | AuthorFragment[]);
-	const match = items.find((f) => f.path === path) ?? items[0];
-
-	if (!match?.id) {
-		return { error: `No CF found at path: ${path}` };
-	}
-
-	if (match.fields?.length) {
-		return { data: authorFragmentToCFFragment(match) };
-	}
-
-	return fetchAuthorFragmentRawById(match.id, opts, env).then((r) =>
-		r.data ? { data: authorFragmentToCFFragment(r.data) } : r
-	);
+	const hydrated = await fetchAuthorFragmentRawById(raw.data.id, opts, env);
+	const fragment = hydrated.data ?? raw.data;
+	return { data: authorFragmentToCFFragment(fragment) };
 }
 
 export async function listAuthorModels(

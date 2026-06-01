@@ -27,14 +27,21 @@ export interface AuthorField {
 	mimeType?: string;
 }
 
+export interface AuthorReferenceItem {
+	id: string;
+	path: string;
+	type: 'fragment' | 'asset';
+	fragment?: AuthorFragment;
+	/** Hydrated asset metadata (GraphQL / all-hydrated). */
+	_publishUrl?: string;
+	_dynamicUrl?: string;
+	_authorUrl?: string;
+	url?: string;
+}
+
 export interface AuthorHydratedReference {
 	fieldName: string;
-	items: Array<{
-		id: string;
-		path: string;
-		type: 'fragment' | 'asset';
-		fragment?: AuthorFragment;
-	}>;
+	items: AuthorReferenceItem[];
 }
 
 export interface AuthorFragmentList {

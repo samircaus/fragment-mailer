@@ -91,11 +91,11 @@ export async function getRouteAuthLevel(
 ): Promise<RouteAuthLevel> {
 	if (pathname.startsWith('/ue/')) return 'public';
 
-	const appRoute =
+		const appRoute =
 		pathname === '/' ||
 		pathname.startsWith('/editor/') ||
-		pathname.startsWith('/templates/') ||
-		pathname.startsWith('/fragments/') ||
+		pathname.startsWith('/templates') ||
+		pathname.startsWith('/fragments') ||
 		pathname.startsWith('/preview/') ||
 		pathname.startsWith('/api/');
 

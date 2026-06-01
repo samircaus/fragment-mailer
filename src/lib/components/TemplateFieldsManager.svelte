@@ -10,6 +10,7 @@
 	interface Props {
 		open?: boolean;
 		campaignId?: string;
+		templateId?: string;
 		authorUrl?: string | null;
 		cfEditorTenant?: string;
 		onclose?: () => void;
@@ -18,6 +19,7 @@
 	let {
 		open = false,
 		campaignId = '',
+		templateId = '',
 		authorUrl = null,
 		cfEditorTenant = 'psc',
 		onclose
@@ -40,17 +42,25 @@
 			lastLoadKey = '';
 			return;
 		}
-		if (campaignId === lastLoadKey) return;
-		lastLoadKey = campaignId;
-		void loadContentModel(campaignId);
+		const loadKey = `${campaignId}:${templateId}`;
+		if (loadKey === lastLoadKey) return;
+		lastLoadKey = loadKey;
+		void loadContentModel(campaignId, templateId);
 	});
 
-	async function loadContentModel(id: string) {
+	function formatToken(field: CfInsertField): string {
+		const open = /asset|image|richtext|html/i.test(field.type) ? '{{{' : '{{';
+		const close = open.length === 3 ? '}}}' : '}}';
+		return `${open}${field.token}${close}`;
+	}
+
+	async function loadContentModel(id: string, tplId: string) {
 		loading = true;
 		error = '';
 		contentModel = null;
 		try {
-			const res = await fetch(`/api/campaigns/${encodeURIComponent(id)}/content-model`);
+			const query = tplId ? `?templateId=${encodeURIComponent(tplId)}` : '';
+			const res = await fetch(`/api/campaigns/${encodeURIComponent(id)}/content-model${query}`);
 			const data = (await res.json().catch(() => ({}))) as ContentModel & { message?: string };
 			if (!res.ok) throw new Error(data.message ?? `Load failed (${res.status})`);
 			contentModel = data;
@@ -125,7 +135,7 @@
 									<tr>
 										<td><code>{field.name}</code></td>
 										<td>{field.label}</td>
-										<td><code>{`{{${field.token}}}`}</code></td>
+										<td><code>{formatToken(field)}</code></td>
 									</tr>
 								{/each}
 							</tbody>

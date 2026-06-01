@@ -3,13 +3,14 @@ import { resolveAuthorModel } from '$lib/aem/author.js';
 import { normalizeCfModelPath } from '$lib/aem/cf-model-scope.js';
 import { aemClientOptions, authorHostUrl, campaignsFolder, type AppEnv } from '$lib/aem/env.js';
 import { normalizeCF } from '$lib/aem/client.js';
+import { hydrateUnresolvedFragmentReferences } from '$lib/aem/hydrate-references.js';
 import type { CFFragment } from '$lib/aem/types.js';
 import type { ContentFragmentItem } from '$lib/aem/types.js';
-import {
-	authorFieldToInsert,
-	fallbackFieldToInsert,
-	type CfInsertField
-} from '$lib/templates/cf-insert.js';
+import { fallbackFieldToInsert } from '$lib/templates/cf-insert.js';
+import { buildInsertFieldsForCampaign } from '$lib/templates/cf-insert-fields.js';
+import type { TemplateDefinition } from '$lib/templates/types.js';
+import type { CfInsertField } from '$lib/templates/cf-insert.js';
+import type { AuthorModel } from '$lib/types/aem.js';
 import type { Campaign, CampaignSummary } from './registry.js';
 
 export type { CampaignSummary };
@@ -44,14 +45,15 @@ export async function getCampaignWithCF(
 
 	if (fragmentResult.error || !fragmentResult.data) return fragmentResult;
 
-	const fragment = fragmentResult.data;
-	const campaign = fragmentToCampaign(fragment, id);
-	return { data: { campaign, cf: normalizeCF(fragment) } };
+	const hydrated = await hydrateUnresolvedFragmentReferences(fragmentResult.data, env);
+	const campaign = fragmentToCampaign(hydrated, id);
+	return { data: { campaign, cf: normalizeCF(hydrated) } };
 }
 
 export async function getCampaignContentModel(
 	id: string,
-	env?: AppEnv
+	env?: AppEnv,
+	templateDefinition?: TemplateDefinition
 ): Promise<Result<CampaignContentModel>> {
 	const fragmentResult = UUID_RE.test(id)
 		? await fetchCampaignFragmentById(id, env)
@@ -59,38 +61,65 @@ export async function getCampaignContentModel(
 
 	if (fragmentResult.error || !fragmentResult.data) return fragmentResult;
 
-	const fragment = fragmentResult.data;
-	const modelPath = normalizeCfModelPath(fragment._model._path);
-	const modelTitle = fragment._model.title;
+	const hydrated = await hydrateUnresolvedFragmentReferences(fragmentResult.data, env);
+	const modelPath = normalizeCfModelPath(hydrated._model._path);
+	const modelTitle = hydrated._model.title;
 	const modelKey = modelPath.split('/').filter(Boolean).pop() ?? modelTitle;
+	const normalized = normalizeCF(hydrated);
 
 	const authorBase = authorHostUrl(env);
-	if (authorBase) {
-		const resolved = await resolveAuthorModel(
-			modelKey,
-			aemClientOptions({ ...env, AEM_BASE_URL: authorBase }),
-			env
-		);
+	const authorOpts = authorBase ? aemClientOptions({ ...env, AEM_BASE_URL: authorBase }) : null;
+
+	let authorModel: AuthorModel | undefined;
+	if (authorOpts) {
+		const resolved = await resolveAuthorModel(modelKey, authorOpts, env);
 		if (resolved.data) {
-			const authorModel = resolved.data as { path?: string };
-			return {
-				data: {
-					model: {
-						id: resolved.data.id,
-						title: resolved.data.title ?? modelTitle,
-						path: normalizeCfModelPath(authorModel.path ?? modelPath)
-					},
-					fields: resolved.data.fields.map(authorFieldToInsert)
-				}
-			};
+			authorModel = resolved.data;
 		}
 	}
 
-	const normalized = normalizeCF(fragment);
+	const resolveModel = async (modelKeyToResolve: string): Promise<AuthorModel | null> => {
+		if (!authorOpts) return null;
+		const resolved = await resolveAuthorModel(modelKeyToResolve, authorOpts, env);
+		return resolved.data ?? null;
+	};
+
+	let fields: CfInsertField[];
+	if (authorModel) {
+		const authorModelMeta = authorModel as { path?: string };
+		fields = await buildInsertFieldsForCampaign({
+			authorModel,
+			fragmentFields: normalized.fields,
+			templateDefinition,
+			resolveModel
+		});
+		return {
+			data: {
+				model: {
+					id: authorModel.id,
+					title: authorModel.title ?? modelTitle,
+					path: normalizeCfModelPath(authorModelMeta.path ?? modelPath)
+				},
+				fields
+			}
+		};
+	}
+
+	fields = await buildInsertFieldsForCampaign({
+		fragmentFields: normalized.fields,
+		templateDefinition,
+		resolveModel
+	});
+
 	const skipKeys = new Set(['title', 'id']);
-	const fields = Object.keys(normalized.fields)
-		.filter((key) => !key.startsWith('_') && !skipKeys.has(key) && !key.endsWith('Html') && !key.endsWith('Url'))
-		.map((name) => fallbackFieldToInsert(name));
+	if (fields.length === 0) {
+		fields = Object.keys(normalized.fields)
+			.filter(
+				(key) =>
+					!key.startsWith('_') && !skipKeys.has(key) && !key.endsWith('Html') && !key.endsWith('Url')
+			)
+			.map((name) => fallbackFieldToInsert(name));
+	}
 
 	return {
 		data: {

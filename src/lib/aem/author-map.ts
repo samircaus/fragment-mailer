@@ -1,3 +1,4 @@
+import { applyAuthorReferences } from './author-references.js';
 import { normalizeCfModelPath } from './cf-model-scope.js';
 import { contentFragmentToCFFragment } from './client.js';
 import type { CFFragment, ContentFragmentItem } from './types.js';
@@ -19,12 +20,7 @@ export function authorFragmentToCFFragment(fragment: AuthorFragment): CFFragment
 		flatFields[field.name] = field.multiple ? field.values : (field.values[0] ?? null);
 	}
 
-	for (const ref of fragment.references ?? []) {
-		const hydrated = ref.items?.find((i) => i.fragment)?.fragment;
-		if (hydrated) {
-			flatFields[ref.fieldName] = authorFragmentToCFFragment(hydrated);
-		}
-	}
+	applyAuthorReferences(fragment, flatFields, authorFragmentToCFFragment);
 
 	const item: ContentFragmentItem = {
 		id: fragment.id,

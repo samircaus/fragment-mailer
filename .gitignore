@@ -27,3 +27,4 @@ vite.config.ts.timestamp-*
 
 # Adobe OAuth S2S credentials (copy from oauth.example.json)
 oauth.json
+.cursor/

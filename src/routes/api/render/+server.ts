@@ -7,9 +7,10 @@ import type { RequestHandler } from './$types';
 import { z } from 'zod';
 
 import { fetchCF, normalizeCF } from '$lib/aem/client.js';
-import { aemClientOptions } from '$lib/aem/env.js';
+import { aemAssetBaseUrl, aemClientOptions } from '$lib/aem/env.js';
 import type { CFFragment } from '$lib/aem/types.js';
 import { loadTemplate } from '$lib/templates/service.js';
+import { buildRenderCfContext } from '$lib/render/cf-context.js';
 import { resolve } from '$lib/render/resolve.js';
 import { compileMJML } from '$lib/render/mjml.js';
 import {
@@ -71,7 +72,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 	const appEnv = resolveAppEnv(env);
 
 	const context = {
-		cf: buildCFContext(cf.fields, aemOpts.baseUrl),
+		cf: buildRenderCfContext(cf.fields, aemAssetBaseUrl(appEnv)),
 		profile: profileData,
 		preserveProfile: mode === 'export',
 		static: { year: new Date().getFullYear() }
@@ -117,17 +118,4 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 	});
 };
 
-function buildCFContext(
-	fields: Record<string, unknown>,
-	assetBaseUrl?: string
-): Record<string, unknown> {
-	const context: Record<string, unknown> = { ...fields };
-	const imageUrl = context.bannerImageUrl;
-	if (typeof imageUrl === 'string' && imageUrl.startsWith('/') && assetBaseUrl) {
-		const absolute = `${assetBaseUrl.replace(/\/$/, '')}${imageUrl}`;
-		context.bannerImageUrl = absolute;
-		context.bannerImage = absolute;
-	}
-	return context;
-}
 

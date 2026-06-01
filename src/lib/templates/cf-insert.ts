@@ -27,9 +27,14 @@ function cfOutputDelimiters(kind: 'richtext' | 'image' | 'reference' | 'text'): 
 	return { open: '{{', close: '}}' };
 }
 
-export function buildCfFieldMjmlSnippet(field: Pick<AuthorModelField, 'name' | 'type' | 'label'>): string {
-	const token = cfTokenForField(field.name, field.type);
-	const kind = fieldTypeKind(field.type, field.name);
+export function buildCfTokenSnippet(
+	token: string,
+	type: string,
+	label?: string,
+	fieldName?: string
+): string {
+	const name = fieldName ?? token.replace(/^cf\./, '').split('.').pop() ?? token;
+	const kind = fieldTypeKind(type, name);
 	const { open, close } = cfOutputDelimiters(kind);
 
 	switch (kind) {
@@ -38,10 +43,15 @@ export function buildCfFieldMjmlSnippet(field: Pick<AuthorModelField, 'name' | '
 		case 'image':
 			return `<mj-image src="${open}${token}${close}" alt="" />`;
 		case 'reference':
-			return `{# ${field.label || field.name} — fragment reference #}\n{% load ${field.name} as fragment ref='this.${field.name}' %}`;
+			return `{# ${label || name} — fragment reference #}\n{% load ${name} as fragment ref='this.${name}' %}`;
 		default:
 			return `<mj-text>\n  {{${token}}}\n</mj-text>`;
 	}
+}
+
+export function buildCfFieldMjmlSnippet(field: Pick<AuthorModelField, 'name' | 'type' | 'label'>): string {
+	const token = cfTokenForField(field.name, field.type);
+	return buildCfTokenSnippet(token, field.type, field.label, field.name);
 }
 
 export function authorFieldToInsert(field: AuthorModelField): CfInsertField {

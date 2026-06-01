@@ -2,6 +2,7 @@
 // Uses the IMS bearer token forwarded by Universal Editor — never refreshes.
 // Import path: $lib/server/aem/cfClient
 
+import { cfReferenceDepth, AUTHOR_CF_REFERENCES } from '$lib/aem/reference-fetch.js';
 import type { AuthorFragment, AuthorFragmentList, AuthorModel } from '$lib/types/aem.js';
 
 export class TokenExpiredError extends Error {
@@ -64,8 +65,10 @@ export function createCfClient(opts: CfClientOptions) {
 			opts: { etag?: string; references?: boolean; depth?: number } = {}
 		) {
 			const qs = new URLSearchParams();
-			if (opts.references) qs.set('references', 'all-hydrated');
-			if (opts.depth != null) qs.set('depth', String(opts.depth));
+			if (opts.references) {
+				qs.set('references', AUTHOR_CF_REFERENCES);
+				qs.set('depth', String(opts.depth ?? cfReferenceDepth()));
+			}
 			const q = qs.size ? `?${qs}` : '';
 			return request<AuthorFragment>(`/fragments/${encodeURIComponent(id)}${q}`, opts.etag);
 		},

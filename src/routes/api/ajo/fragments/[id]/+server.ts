@@ -13,6 +13,8 @@ import {
 } from '$lib/ajo/fragments-client.js';
 import { isAjoConfigured } from '$lib/auth/ajo-token-provider.js';
 import { resolveAppEnv } from '$lib/server/app-env.js';
+import { upsertAjoFragment } from '$lib/db/ajo-fragments.js';
+import { getDb } from '$lib/db/email-status.js';
 
 function ajoErrorDetail(raw: string, fallback: string): string {
 	const jsonStart = raw.indexOf('{');
@@ -52,6 +54,12 @@ export const GET: RequestHandler = async ({ params, platform }) => {
 			);
 			throw error(status, ajoErrorDetail(fragmentResult.error ?? '', 'Fragment not found'));
 		}
+
+		// Auto-register in local DB so it appears in the "managed here" list.
+		const db = getDb(platform);
+		await upsertAjoFragment(db, { id: params.id, name: fragmentResult.data.name }).catch(
+			() => undefined
+		);
 
 		return json({
 			fragment: fragmentResult.data,
@@ -124,6 +132,10 @@ export const PUT: RequestHandler = async ({ params, request, platform }) => {
 		}
 		published = true;
 	}
+
+	const savedName = parsed.data.name ?? existing.data.name;
+	const db = getDb(platform);
+	await upsertAjoFragment(db, { id: params.id, name: savedName }).catch(() => undefined);
 
 	return json({ ok: true, published });
 };

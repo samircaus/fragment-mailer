@@ -21,7 +21,7 @@ describe('cfExperienceCloudBrowseUrl', () => {
 				'psc'
 			)
 		).toBe(
-			'https://experience.adobe.com/?repo=author-p125048-e1847106.adobeaemcloud.com#/@psc/aem/cf/editor/browse/content/dam/email/en/campaigns'
+			'https://experience.adobe.com/?repo=author-p125048-e1847106.adobeaemcloud.com#/@psc/aem/cf/admin/content/dam/email/en/campaigns'
 		);
 	});
 

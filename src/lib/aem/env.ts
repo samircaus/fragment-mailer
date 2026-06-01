@@ -13,6 +13,8 @@ export interface AppEnv {
 	AEM_BASE_URL?: string;
 	AEM_API_KEY?: string;
 	AEM_CAMPAIGNS_PATH?: string;
+	/** Author CF fetch: nested reference depth (default 3). */
+	AEM_CF_REFERENCE_DEPTH?: string;
 	/** openapi (Content Fragment Delivery) or graphql (persisted queries). Default: openapi */
 	AEM_FETCH_MODE?: string;
 	/** GraphQL persisted-query endpoint segment (default: email) */
@@ -126,6 +128,19 @@ function stripUrlToHostname(raw: string): string {
 }
 
 /** Publish hostname for AJO fragment repoId (no protocol). Never returns an Author host. */
+/** HTTPS origin for DAM assets in preview HTML (Publish when editing on Author). */
+export function aemAssetBaseUrl(env?: AppEnv): string {
+	const explicit = env?.AEM_PUBLISH_HOST?.trim();
+	if (explicit) {
+		return normalizeAemBaseUrl(explicit.startsWith('http') ? explicit : `https://${explicit}`);
+	}
+	if (aemTier(env) === 'author') {
+		const publishHost = publishHostRepoId(env);
+		if (publishHost) return `https://${publishHost}`;
+	}
+	return normalizeAemBaseUrl(env?.AEM_BASE_URL ?? '');
+}
+
 export function publishHostRepoId(env?: AppEnv): string {
 	const explicit = env?.AEM_PUBLISH_HOST?.trim();
 	if (explicit) return stripUrlToHostname(explicit);

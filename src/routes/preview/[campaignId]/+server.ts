@@ -8,7 +8,6 @@ import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 
 import { loadTemplate } from '$lib/templates/service.js';
-import type { TemplateDefinition } from '$lib/templates/types.js';
 import { resolve } from '$lib/render/resolve.js';
 import { compileMJML } from '$lib/render/mjml.js';
 import {
@@ -29,6 +28,8 @@ import {
 } from '$lib/preview/envelope.js';
 import { applyPreviewFragments } from '$lib/fragments/preview.js';
 import { getCampaignWithCF } from '$lib/campaigns/service.js';
+import { aemAssetBaseUrl } from '$lib/aem/env.js';
+import { buildRenderCfContext } from '$lib/render/cf-context.js';
 import { resolveAppEnv } from '$lib/server/app-env.js';
 
 export const GET: RequestHandler = async ({ params, url, platform }) => {
@@ -57,8 +58,7 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
 	}
 	const { definition, mjml } = templateResult.data!;
 
-	// Resolve referenced CFs (for the featured offer block, etc.)
-	const cfContext = buildCFContext(cf.fields, definition, env?.AEM_BASE_URL);
+	const cfContext = buildRenderCfContext(cf.fields, aemAssetBaseUrl(env));
 
 	// Build render context
 	const persona = personaJson
@@ -157,29 +157,3 @@ function formatValidationWarning(w: ValidationWarning): string {
 	return `${w.message} ${w.suggestion}`;
 }
 
-// Merge referenced CF objects into the top-level cf context so the resolver
-// can traverse {{cf.featuredOffer.headline}} correctly.
-function buildCFContext(
-	fields: Record<string, unknown>,
-	definition: TemplateDefinition,
-	assetBaseUrl?: string
-): Record<string, unknown> {
-	const context: Record<string, unknown> = { ...fields };
-
-	for (const [fieldName, fieldDef] of Object.entries(definition.fields)) {
-		if (fieldDef.type !== 'reference') continue;
-		const refValue = fields[fieldName];
-		if (refValue && typeof refValue === 'object') {
-			context[fieldName] = refValue;
-		}
-	}
-
-	const imageUrl = context.bannerImageUrl;
-	if (typeof imageUrl === 'string' && imageUrl.startsWith('/') && assetBaseUrl) {
-		const absolute = `${assetBaseUrl.replace(/\/$/, '')}${imageUrl}`;
-		context.bannerImageUrl = absolute;
-		context.bannerImage = absolute;
-	}
-
-	return context;
-}

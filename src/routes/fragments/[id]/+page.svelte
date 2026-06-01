@@ -115,7 +115,8 @@
 			</a>
 			<nav class="header-nav">
 				<a href="/" class="nav-link">Emails</a>
-				<a href="/fragments" class="nav-link active">AJO Fragments</a>
+				<a href="/templates" class="nav-link">Templates</a>
+				<span class="nav-link active">Fragments</span>
 			</nav>
 		</div>
 	</header>

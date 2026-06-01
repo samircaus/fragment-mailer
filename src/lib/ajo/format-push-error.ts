@@ -3,7 +3,7 @@ import type { AjoRequestFailure } from './client.js';
 export interface AjoPushErrorPayload {
 	message?: string;
 	failure?: AjoRequestFailure;
-	validationErrors?: Array<{ message: string }>;
+	validationErrors?: Array<{ message: string; details?: string[] }>;
 }
 
 /** Full error text for AJO push failure dialogs and copy. */
@@ -47,6 +47,11 @@ export function formatAjoPushError(payload: AjoPushErrorPayload): string {
 		lines.push('', 'Validation:');
 		for (const err of payload.validationErrors) {
 			lines.push(`  • ${err.message}`);
+			if (err.details?.length) {
+				for (const detail of err.details) {
+					lines.push(`    – ${detail}`);
+				}
+			}
 		}
 	}
 
