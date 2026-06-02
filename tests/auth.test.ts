@@ -4,6 +4,7 @@ import {
 	authenticateRequest,
 	getRouteAuthLevel,
 	isAllowedAuthorHost,
+	isAllowedPublishHost,
 	isAuthEnabled,
 	secretsEqual
 } from '../src/lib/server/auth.js';
@@ -142,6 +143,20 @@ describe('authenticateRequest', () => {
 	it('rejects missing credentials when auth enabled', async () => {
 		const result = await authenticateRequest(new Request('http://x'), {}, config, 'protected');
 		expect(result).toEqual({ ok: false });
+	});
+});
+
+describe('isAllowedPublishHost', () => {
+	const author = 'https://author-p125048-e1847106.adobeaemcloud.com';
+	const publish = 'https://publish-p125048-e1847106.adobeaemcloud.com';
+	const env = { AEM_TIER: 'author', AEM_BASE_URL: author };
+
+	it('allows publish host derived from author', () => {
+		expect(isAllowedPublishHost(publish, author, env)).toBe(true);
+	});
+
+	it('rejects unrelated publish host when AEM is configured', () => {
+		expect(isAllowedPublishHost('https://evil.example.com', author, env)).toBe(false);
 	});
 });
 

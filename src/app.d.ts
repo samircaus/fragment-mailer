@@ -6,6 +6,7 @@ declare global {
 			aem?: {
 				token: string;
 				authorHost: string;
+				publishHost?: string;
 			};
 		}
 		interface Platform {

@@ -32,7 +32,7 @@ import { aemAssetBaseUrl } from '$lib/aem/env.js';
 import { buildRenderCfContext } from '$lib/render/cf-context.js';
 import { resolveAppEnv } from '$lib/server/app-env.js';
 
-export const GET: RequestHandler = async ({ params, url, platform }) => {
+export const GET: RequestHandler = async ({ params, url, platform, locals }) => {
 	const env = resolveAppEnv(platform?.env);
 
 	const { campaignId } = params;
@@ -63,7 +63,10 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
 	const { definition, mjml } = templateResult.data!;
 	const campaignIdEncoded = encodeURIComponent(campaignId);
 
-	const cfContext = buildRenderCfContext(cf.fields, aemAssetBaseUrl(env));
+	const cfContext = buildRenderCfContext(
+		cf.fields,
+		aemAssetBaseUrl(env, locals.aem?.publishHost)
+	);
 
 	// Build render context
 	const persona = personaJson
@@ -111,9 +114,13 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
 	});
 	let html = injectUEAttributes(compileResult.html, bindings);
 	html = injectUEBody(html, cf.path);
+	const aemConnectionUrl =
+		locals.aem?.authorHost ??
+		env?.AEM_BASE_URL ??
+		'https://author-p00000-e00000.adobeaemcloud.com';
 	html = injectUEHead(
 		html,
-		env?.AEM_BASE_URL ?? 'https://author-p00000-e00000.adobeaemcloud.com',
+		aemConnectionUrl,
 		url.toString(),
 		{
 			componentDefinitionUrl: `/api/templates/${encodeURIComponent(templateId)}/component-definition?campaignId=${campaignIdEncoded}`,

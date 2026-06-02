@@ -127,9 +127,28 @@ function stripUrlToHostname(raw: string): string {
 	return raw.replace(/^https?:\/\//i, '').replace(/\/$/, '');
 }
 
-/** Publish hostname for AJO fragment repoId (no protocol). Never returns an Author host. */
+/** Publish origin derived from an Author origin (author-p… → publish-p…). */
+export function derivePublishOriginFromAuthor(authorHost: string): string | null {
+	const normalized = normalizeAemBaseUrl(
+		authorHost.startsWith('http') ? authorHost : `https://${authorHost}`
+	);
+	try {
+		const url = new URL(normalized);
+		if (!/^author[-.]/i.test(url.hostname)) return null;
+		url.hostname = url.hostname.replace(/^author/i, 'publish');
+		return normalizeAemBaseUrl(url.origin);
+	} catch {
+		return null;
+	}
+}
+
 /** HTTPS origin for DAM assets in preview HTML (Publish when editing on Author). */
-export function aemAssetBaseUrl(env?: AppEnv): string {
+export function aemAssetBaseUrl(env?: AppEnv, sessionPublishHost?: string | null): string {
+	const session = sessionPublishHost?.trim();
+	if (session) {
+		return normalizeAemBaseUrl(session.startsWith('http') ? session : `https://${session}`);
+	}
+
 	const explicit = env?.AEM_PUBLISH_HOST?.trim();
 	if (explicit) {
 		return normalizeAemBaseUrl(explicit.startsWith('http') ? explicit : `https://${explicit}`);

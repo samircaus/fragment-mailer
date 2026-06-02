@@ -5,7 +5,12 @@
 
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import type { AppEnv } from '$lib/aem/env.js';
-import { authorHostUrl, normalizeAemBaseUrl } from '$lib/aem/env.js';
+import {
+	authorHostUrl,
+	derivePublishOriginFromAuthor,
+	normalizeAemBaseUrl,
+	publishHostRepoId
+} from '$lib/aem/env.js';
 
 export interface AuthConfig {
 	secret?: string;
@@ -153,6 +158,34 @@ export async function authenticateRequest(
 	}
 
 	return { ok: false };
+}
+
+/** Restrict session publishHost to configured or author-derived Publish origins. */
+export function isAllowedPublishHost(
+	publishHost: string,
+	authorHost: string,
+	env?: AppEnv
+): boolean {
+	const allowed = new Set<string>();
+
+	const explicit = env?.AEM_PUBLISH_HOST?.trim();
+	if (explicit) {
+		const origin = normalizeAuthorOrigin(explicit);
+		if (origin) allowed.add(origin);
+	}
+
+	const derivedFromAuthor = derivePublishOriginFromAuthor(authorHost);
+	if (derivedFromAuthor) allowed.add(derivedFromAuthor.toLowerCase());
+
+	const repoHost = publishHostRepoId(env);
+	if (repoHost) allowed.add(`https://${repoHost}`.toLowerCase());
+
+	if (allowed.size === 0) {
+		return derivedFromAuthor !== null && normalizeAuthorOrigin(publishHost) === derivedFromAuthor.toLowerCase();
+	}
+
+	const requested = normalizeAuthorOrigin(publishHost);
+	return requested !== null && allowed.has(requested);
 }
 
 /** Restrict session authorHost to configured AEM Author origins. */

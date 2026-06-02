@@ -17,14 +17,23 @@
     <mj-preview>{{cf.title}}</mj-preview>
     <mj-style>
       .offer-card {
-        border: 1px solid #E8E8ED !important;
         border-radius: 10px !important;
         overflow: hidden;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
       }
       .offer-card > table {
         border-radius: 10px !important;
         overflow: hidden;
+      }
+      .offer-cta {
+        text-align: center !important;
+      }
+      .offer-cta table {
+        margin: 0 auto 0 auto !important;
+      }
+      .offer-cta a {
+        font-size: 12px !important;
+        padding: 8px 16px !important;
+        line-height: 1.2 !important;
       }
       .offer-title {
         font-size: 17px !important;
@@ -184,11 +193,18 @@
               {% endif %}
             </mj-text>
             {% if offer0.ctaLabel %}
-            <mj-button href="{{offer0.ctaLink | default: '#'}}" align="center" padding="20px 18px 22px">
+            <mj-button
+              css-class="offer-cta"
+              href="{{offer0.ctaLink | default: '#'}}"
+              align="center"
+              font-size="12px"
+              inner-padding="8px 16px"
+              padding="16px 18px 28px 22px"
+            >
               {{offer0.ctaLabel}}
             </mj-button>
             {% else %}
-            <mj-text css-class="offer-cta-spacer" padding="0 18px 22px">&nbsp;</mj-text>
+            <mj-text css-class="offer-cta-spacer" padding="0 18px 28px 22px">&nbsp;</mj-text>
             {% endif %}
           </mj-wrapper>
         </mj-column>
@@ -218,11 +234,18 @@
               {% endif %}
             </mj-text>
             {% if offer1.ctaLabel %}
-            <mj-button href="{{offer1.ctaLink | default: '#'}}" align="center" padding="20px 18px 22px">
+            <mj-button
+              css-class="offer-cta"
+              href="{{offer1.ctaLink | default: '#'}}"
+              align="center"
+              font-size="12px"
+              inner-padding="8px 16px"
+              padding="16px 18px 28px 22px"
+            >
               {{offer1.ctaLabel}}
             </mj-button>
             {% else %}
-            <mj-text css-class="offer-cta-spacer" padding="0 18px 22px">&nbsp;</mj-text>
+            <mj-text css-class="offer-cta-spacer" padding="0 18px 28px 22px">&nbsp;</mj-text>
             {% endif %}
           </mj-wrapper>
         </mj-column>
@@ -252,11 +275,18 @@
               {% endif %}
             </mj-text>
             {% if offer2.ctaLabel %}
-            <mj-button href="{{offer2.ctaLink | default: '#'}}" align="center" padding="20px 18px 22px">
+            <mj-button
+              css-class="offer-cta"
+              href="{{offer2.ctaLink | default: '#'}}"
+              align="center"
+              font-size="12px"
+              inner-padding="8px 16px"
+              padding="16px 18px 28px 22px"
+            >
               {{offer2.ctaLabel}}
             </mj-button>
             {% else %}
-            <mj-text css-class="offer-cta-spacer" padding="0 18px 22px">&nbsp;</mj-text>
+            <mj-text css-class="offer-cta-spacer" padding="0 18px 28px 22px">&nbsp;</mj-text>
             {% endif %}
           </mj-wrapper>
         </mj-column>

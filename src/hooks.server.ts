@@ -11,9 +11,18 @@ import {
 	getRouteAuthLevel,
 	isAuthEnabled
 } from '$lib/server/auth.js';
+import { tryUeBootstrapRedirect } from '$lib/server/ue-bootstrap.js';
 
 export const handle: Handle = async ({ event, resolve }) => {
 	const start = Date.now();
+
+	const env = resolveAppEnv(event.platform?.env);
+	if (event.request.method === 'GET') {
+		const bootstrapTarget = tryUeBootstrapRedirect(event.url, event.cookies, env);
+		if (bootstrapTarget) {
+			redirect(302, bootstrapTarget);
+		}
+	}
 
 	// UE opens the configured preview URL in a single iframe. The editor shell embeds
 	// /preview in a nested iframe, which breaks the properties panel — serve preview HTML directly.
@@ -32,11 +41,10 @@ export const handle: Handle = async ({ event, resolve }) => {
 	// Populate AEM context from session cookies (written by /api/session or the UE bootstrap flow)
 	const token = event.cookies.get('aem_token');
 	const authorHost = event.cookies.get('aem_author_host');
+	const publishHost = event.cookies.get('aem_publish_host');
 	if (token && authorHost) {
-		event.locals.aem = { token, authorHost };
+		event.locals.aem = { token, authorHost, publishHost: publishHost ?? undefined };
 	}
-
-	const env = resolveAppEnv(event.platform?.env);
 	const authConfig = authConfigFromEnv(env);
 	const authLevel = await getRouteAuthLevel(
 		event.url.pathname,

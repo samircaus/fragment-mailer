@@ -7,17 +7,9 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { resolveAppEnv } from '$lib/server/app-env.js';
-import { isAllowedAuthorHost } from '$lib/server/auth.js';
-
-function cookieOpts(secure: boolean) {
-	return {
-		path: '/',
-		httpOnly: true,
-		secure,
-		sameSite: (secure ? 'none' : 'lax') as 'none' | 'lax',
-		maxAge: 60 * 60 * 8 // 8 h — typical IMS token TTL
-	};
-}
+import { isAllowedAuthorHost, isAllowedPublishHost } from '$lib/server/auth.js';
+import { derivePublishOriginFromAuthor, normalizeAemBaseUrl } from '$lib/aem/env.js';
+import { ueSessionCookieOpts } from '$lib/server/ue-bootstrap.js';
 
 export const POST: RequestHandler = async ({ request, cookies, url, platform }) => {
 	const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
@@ -25,23 +17,49 @@ export const POST: RequestHandler = async ({ request, cookies, url, platform }) 
 		throw error(400, 'token and authorHost are required');
 	}
 
-	const { token, authorHost } = body as { token: string; authorHost: string };
+	const { token, authorHost, publishHost } = body as {
+		token: string;
+		authorHost: string;
+		publishHost?: string;
+	};
 
+	let authorOrigin: string;
 	try {
-		new URL(authorHost);
+		authorOrigin = normalizeAemBaseUrl(authorHost);
+		new URL(authorOrigin);
 	} catch {
 		throw error(400, 'authorHost must be a valid URL');
 	}
 
 	const env = resolveAppEnv(platform?.env);
-	if (!isAllowedAuthorHost(authorHost, env)) {
+	if (!isAllowedAuthorHost(authorOrigin, env)) {
 		throw error(400, 'authorHost is not an allowed AEM Author origin');
 	}
 
+	let publishOrigin: string | null = null;
+	if (typeof publishHost === 'string' && publishHost.trim()) {
+		try {
+			publishOrigin = normalizeAemBaseUrl(
+				publishHost.startsWith('http') ? publishHost : `https://${publishHost}`
+			);
+			new URL(publishOrigin);
+		} catch {
+			throw error(400, 'publishHost must be a valid URL');
+		}
+		if (!isAllowedPublishHost(publishOrigin, authorOrigin, env)) {
+			throw error(400, 'publishHost is not an allowed AEM Publish origin');
+		}
+	} else {
+		publishOrigin = derivePublishOriginFromAuthor(authorOrigin);
+	}
+
 	const secure = url.protocol === 'https:';
-	const opts = cookieOpts(secure);
+	const opts = ueSessionCookieOpts(secure);
 	cookies.set('aem_token', token, opts);
-	cookies.set('aem_author_host', authorHost, opts);
+	cookies.set('aem_author_host', authorOrigin, opts);
+	if (publishOrigin) {
+		cookies.set('aem_publish_host', publishOrigin, opts);
+	}
 
 	return json({ ok: true });
 };
@@ -49,5 +67,6 @@ export const POST: RequestHandler = async ({ request, cookies, url, platform }) 
 export const DELETE: RequestHandler = async ({ cookies }) => {
 	cookies.delete('aem_token', { path: '/' });
 	cookies.delete('aem_author_host', { path: '/' });
+	cookies.delete('aem_publish_host', { path: '/' });
 	return json({ ok: true });
 };

@@ -149,12 +149,14 @@ the IMS bearer token forwarded by UE — not service credentials, not GraphQL.
 |---|---|---|
 | `login-token` | UE | IMS bearer token for the logged-in author |
 | `author` | UE | Full Author host URL, e.g. `https://author-p12345-e67890.adobeaemcloud.com` |
-| `publish` | UE | Publish host (stored but not used for API calls) |
+| `publish` | UE | Publish host — stored in `aem_publish_host` cookie for preview asset URLs |
 | `env` | UE | Environment hint (informational) |
 
-On first open, the server reads these params, stores the token in an **httpOnly cookie**
-(`aem_token`), and redirects to the clean URL. Subsequent loads use the cookie. The token
+On first open, the server reads these params, stores the token and AEM hosts in **httpOnly cookies**
+(`aem_token`, `aem_author_host`, `aem_publish_host`), and redirects to the clean URL. Subsequent loads use the cookies. The token
 never appears in rendered HTML.
+
+The same bootstrap runs for `/preview/:campaignId` (Universal Editor canvas) and `/editor/:campaignId`.
 
 ### Required UE configuration
 
