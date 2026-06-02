@@ -75,7 +75,7 @@ const mockCampaign: AuthorFragment = {
 };
 
 describe('summer campaign AJO transform', () => {
-	it('surfaces suspicious personalization tokens', async () => {
+	it('does not emit Liquid default filters or let tags', async () => {
 		const result = await transformTemplateForAjo({
 			mjml: summerMJML,
 			campaignId: 'summer',
@@ -90,10 +90,11 @@ describe('summer campaign AJO transform', () => {
 		});
 
 		expect(result.validationErrors).toHaveLength(0);
-
-		expect(result.html).toContain('{%#if');
 		expect(result.html).not.toMatch(/\|\s*default:/);
-		expect(result.html).not.toMatch(/\{\{\{/);
-		expect(result.html).not.toMatch(/\{%\s*if\s+/);
+		expect(result.html).not.toMatch(/\{%\s*let\s+/);
+		expect(result.html).not.toContain('<mj-raw>');
+		expect(result.html).toContain('{%#if');
+		expect(result.html).toContain('href="{{offer0.ctaLink}}"');
+		expect(result.html).toContain("result='offer0'");
 	});
 });

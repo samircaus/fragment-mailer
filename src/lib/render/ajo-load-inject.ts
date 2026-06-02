@@ -94,8 +94,7 @@ export function inferLoadTagSpecs(
 			usedRoots.has(refName) ||
 			mjml.includes(`cf.${refName}.`) ||
 			new RegExp(`\\bcf\\.${refName}\\b`).test(mjml);
-		const onCampaign = campaign?.references?.some((r) => r.fieldName === refName);
-		if (!usedInTemplate && !onCampaign) continue;
+		if (!usedInTemplate) continue;
 
 		const campaignField = campaign?.fields?.find((f) => f.name === refName);
 		if (campaignField && !isAuthorFragmentReferenceField(campaignField)) continue;

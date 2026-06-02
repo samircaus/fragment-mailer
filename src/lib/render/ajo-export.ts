@@ -40,12 +40,33 @@ export function wrapAjoControlTagsForMjml(mjml: string): string {
 	});
 }
 
+/** Liquid `| default:` (preview resolver) → AJO `{%#if %}` blocks. */
+export function convertLiquidDefaultFilters(html: string): string {
+	return html.replace(
+		/\{\{\s*([\s\S]*?)\s*\|\s*default:\s*(['"])([\s\S]*?)\2\s*\}\}/g,
+		(_full, expr: string, _quote: string, fallback: string) => {
+			const trimmedExpr = expr.trim();
+			const trimmedFallback = fallback.trim();
+			return `{%#if ${trimmedExpr} %}{{${trimmedExpr}}}{%else%}${trimmedFallback}{%/if%}`;
+		}
+	);
+}
+
+/** MJML leaves nested control tags inside literal `<mj-raw>` wrappers — unwrap for AJO. */
+export function stripMjRawPersonalizationWrappers(html: string): string {
+	return html.replace(/<mj-raw>\s*([\s\S]*?)\s*<\/mj-raw>/gi, '$1');
+}
+
 /** Convert Liquid-style control tags to AJO Handlebars personalization syntax. */
 export function normalizeAjoPersonalizationSyntax(html: string): string {
-	return html
-		.replace(/\{%\s*if\s+/g, '{%#if ')
-		.replace(/\{%\s*endif\s*%\}/g, '{%/if%}')
-		.replace(/\{%\s*else\s*%\}/g, '{%else%}');
+	return stripMjRawPersonalizationWrappers(
+		convertLiquidDefaultFilters(
+			html
+				.replace(/\{%\s*if\s+/g, '{%#if ')
+				.replace(/\{%\s*endif\s*%\}/g, '{%/if%}')
+				.replace(/\{%\s*else\s*%\}/g, '{%else%}')
+		)
+	);
 }
 
 function getOrCreateBinding(

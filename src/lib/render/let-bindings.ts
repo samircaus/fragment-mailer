@@ -5,6 +5,11 @@ import type { UEBinding } from '$lib/render/inject-ue.js';
 
 const LET_RE = /\{%\s*let\s+([A-Za-z_]\w*)\s*=\s*([\s\S]*?)\s*%\}/g;
 
+/** Remove preview-only `{% let var = cf.path %}` aliases after load tags are inferred. */
+export function stripLetStatements(template: string): string {
+	return template.replace(new RegExp(LET_RE.source, 'g'), '');
+}
+
 /** Map let var → AEM ref expression (e.g. offer0 → this.offers[0]). */
 export function parseLetFragmentAliases(mjml: string): Map<string, string> {
 	const aliases = new Map<string, string>();

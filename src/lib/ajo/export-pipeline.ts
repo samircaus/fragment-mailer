@@ -16,6 +16,7 @@ import {
 import { resolveLoadTagRefs } from '$lib/render/ajo-ref-resolver.js';
 import { normalizeAjoPersonalizationSyntax, wrapAjoControlTagsForMjml } from '$lib/render/ajo-export.js';
 import { ensureLoadTagsInTemplate } from '$lib/render/ajo-load-inject.js';
+import { stripLetStatements } from '$lib/render/let-bindings.js';
 import { applyPreviewFragments } from '$lib/fragments/preview.js';
 import type { TemplateDefinition } from '$lib/templates/registry.js';
 import type { AuthorFragment } from '$lib/types/aem.js';
@@ -99,9 +100,11 @@ export async function transformTemplateForAjo(input: AjoTransformInput): Promise
 		return [buildLetFragmentTag(tag.varName, match.uuid, repoId)];
 	});
 
-	const transformedMjml = stripLoadTags(
-		preparedMjml,
-		loadTags.map((tag) => tag.raw)
+	const transformedMjml = stripLetStatements(
+		stripLoadTags(
+			preparedMjml,
+			loadTags.map((tag) => tag.raw)
+		)
 	);
 	const wrappedMjml = wrapAjoControlTagsForMjml(transformedMjml);
 	const compileResult = await compileMJML(wrappedMjml, { minify: false });

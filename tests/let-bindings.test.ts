@@ -4,7 +4,8 @@ import {
 	cfExpressionToFragmentRef,
 	collectLetVariableBindings,
 	parseLetFragmentAliases,
-	resolveLetSourceCfPath
+	resolveLetSourceCfPath,
+	stripLetStatements
 } from '../src/lib/render/let-bindings.js';
 import { collectCFOutputBindings, injectUEAttributes, instrumentCFOutputTokens } from '../src/lib/render/inject-ue.js';
 import { buildUEBindings } from '../src/lib/render/ue-bindings.js';
@@ -23,6 +24,11 @@ describe('let-bindings', () => {
 		const aliases = parseLetFragmentAliases(mjml);
 		expect(aliases.get('offer0')).toBe('this.offers[0]');
 		expect(aliases.get('offer1')).toBe('this.offers[1]');
+	});
+
+	it('stripLetStatements removes let tags for AJO export', () => {
+		const mjml = `{% let offer0 = cf.offers.0 %}<mj-text>{{offer0.title}}</mj-text>`;
+		expect(stripLetStatements(mjml)).toBe('<mj-text>{{offer0.title}}</mj-text>');
 	});
 
 	it('collects offer0.title bindings', () => {
