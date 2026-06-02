@@ -107,6 +107,7 @@ function inferFieldTypeFromTokenName(
 	tokenName: string
 ): UEBinding['fieldType'] {
 	if (/(?:body|copy|html)$/i.test(tokenName)) return 'richtext';
+	if (/(?:image|banner|photo|thumbnail)/i.test(tokenName)) return 'reference';
 	return 'text';
 }
 

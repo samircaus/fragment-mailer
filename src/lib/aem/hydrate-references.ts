@@ -30,8 +30,9 @@ async function loadReferencedFields(
 
 	const withNested = await hydrateUnresolvedFragmentReferences(fetched.data, env, cache);
 	const normalized = normalizeCF(withNested).fields;
-	cache.set(path, normalized);
-	return normalized;
+	const withRefPath = { _path: path, ...normalized };
+	cache.set(path, withRefPath);
+	return withRefPath;
 }
 
 /**

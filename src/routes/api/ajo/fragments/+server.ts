@@ -11,6 +11,7 @@ import { listAjoFragments } from '$lib/db/ajo-fragments.js';
 import { listAjoFragmentDrafts, upsertAjoFragmentDraft } from '$lib/db/ajo-fragment-drafts.js';
 import { getDb } from '$lib/db/email-status.js';
 import { z } from 'zod';
+import { DEFAULT_FRAGMENT_MJML } from '$lib/mjml/default-mjml.js';
 
 export const GET: RequestHandler = async ({ url, platform }) => {
 	if (url.searchParams.get('source') === 'local') {
@@ -79,7 +80,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 		id,
 		name: parsed.data.name,
 		description: parsed.data.description ?? '',
-		expression: parsed.data.expression ?? '',
+		expression: parsed.data.expression ?? DEFAULT_FRAGMENT_MJML,
 		subType: parsed.data.subType ?? 'HTML'
 	});
 

@@ -23,32 +23,85 @@ const OUTPUT_TOKEN_RE = /\{\{\s*([\s\S]*?)\s*\}\}/g;
 const VALID_CF_PATH_RE = /^cf\.[A-Za-z_]\w*(\.[A-Za-z_]\w*)*$/;
 
 // 1 ─────────────────────────────────────────────────────────────────────────
-// Inject data-aue-* onto each <span data-fm-binding> marker.
+// Inject data-aue-* onto each <span data-fm-binding> marker and on <img> after fm-binding comments.
 export function injectUEAttributes(html: string, bindings: UEBinding[]): string {
-	let result = html;
+	let result = injectUEImageCommentBindings(html, bindings);
 
 	for (const binding of bindings) {
 		const escapedPath = escapeAttr(binding.fieldPath);
 		const searchPattern = `data-fm-binding="${escapedPath}"`;
 		if (!result.includes(searchPattern)) continue;
 
-		// URN uses the "aemconnection" reference name declared in the page <meta> tag.
-		const aueResource = cfUeResourceUrn(binding.cfPath);
-		const aueType = mapFieldTypeToAUE(binding.fieldType);
-		const aueLabel = binding.fieldName.replace(/([A-Z])/g, ' $1').trim();
-
-		const replacement =
-			`data-fm-binding="${escapedPath}" ` +
-			`data-aue-resource="${escapeAttr(aueResource)}" ` +
-			`data-aue-prop="${escapeAttr(binding.fieldName)}" ` +
-			`data-aue-type="${aueType}" ` +
-			`data-aue-label="${escapeAttr(aueLabel)}"` +
-			(binding.modelId ? ` data-aue-model="${escapeAttr(binding.modelId)}"` : '');
-
-		result = result.replaceAll(searchPattern, replacement);
+		result = result.replaceAll(searchPattern, buildFmBindingReplacement(binding, escapedPath));
 	}
 
 	return result;
+}
+
+/** Stamp data-aue-* on the first <img> after each compile-time fm-binding comment. */
+function injectUEImageCommentBindings(html: string, bindings: UEBinding[]): string {
+	let result = html;
+
+	for (const binding of bindings) {
+		const comment = fmBindingComment(binding.fieldPath);
+		let searchFrom = 0;
+
+		while (searchFrom < result.length) {
+			const commentIdx = result.indexOf(comment, searchFrom);
+			if (commentIdx === -1) break;
+
+			const nextMarker = result.indexOf('<!-- fm-binding:', commentIdx + comment.length);
+			const segmentEnd = nextMarker === -1 ? result.length : nextMarker;
+			const segment = result.slice(commentIdx, segmentEnd);
+			const imgMatch = segment.match(/<img\b([^>]*)>/i);
+			if (!imgMatch || imgMatch.index === undefined) {
+				searchFrom = commentIdx + comment.length;
+				continue;
+			}
+
+			if (/\bdata-aue-resource=/.test(imgMatch[1])) {
+				searchFrom = commentIdx + comment.length;
+				continue;
+			}
+
+			const aueAttrs = buildAueAttributeSuffix(binding);
+			const attrs = imgMatch[1];
+			const trimmed = attrs.trimStart();
+			const spacer = trimmed.length > 0 ? ' ' : '';
+			const stampedImg = `<img ${aueAttrs}${spacer}${trimmed}>`;
+			const absoluteStart = commentIdx + imgMatch.index;
+			result =
+				result.slice(0, absoluteStart) +
+				stampedImg +
+				result.slice(absoluteStart + imgMatch[0].length);
+
+			searchFrom = absoluteStart + stampedImg.length;
+		}
+	}
+
+	return result;
+}
+
+function buildFmBindingReplacement(binding: UEBinding, escapedPath: string): string {
+	return `data-fm-binding="${escapedPath}" ${buildAueAttributeSuffix(binding)}`.trimEnd();
+}
+
+function buildAueAttributeSuffix(binding: UEBinding): string {
+	const aueResource = cfUeResourceUrn(binding.cfPath);
+	const aueType = mapFieldTypeToAUE(binding.fieldType);
+	const aueLabel = binding.fieldName.replace(/([A-Z])/g, ' $1').trim();
+
+	return (
+		`data-aue-resource="${escapeAttr(aueResource)}" ` +
+		`data-aue-prop="${escapeAttr(binding.fieldName)}" ` +
+		`data-aue-type="${aueType}" ` +
+		`data-aue-label="${escapeAttr(aueLabel)}"` +
+		(binding.modelId ? ` data-aue-model="${escapeAttr(binding.modelId)}"` : '')
+	);
+}
+
+function fmBindingComment(fieldPath: string): string {
+	return `<!-- fm-binding:${fieldPath} -->`;
 }
 
 // 2 ─────────────────────────────────────────────────────────────────────────
@@ -115,27 +168,40 @@ function instrumentCfTokensInSegment(segment: string): string {
 }
 
 function collectCfTokensInSegment(segment: string, found: Set<string>): void {
+	collectCfPathsInText(segment, found);
+}
+
+function collectCfPathsInText(text: string, found: Set<string>): void {
 	const collect = (_full: string, expr: string) => {
 		const fieldPath = extractCFPath(expr);
 		if (fieldPath) found.add(fieldPath);
 		return _full;
 	};
 
-	segment.replace(TRIPLE_OUTPUT_TOKEN_RE, collect);
-	segment.replace(OUTPUT_TOKEN_RE, collect);
+	text.replace(TRIPLE_OUTPUT_TOKEN_RE, collect);
+	text.replace(OUTPUT_TOKEN_RE, collect);
 }
+
+const UE_ATTRIBUTE_TAG_RE = /\b(?:mj-image|mj-button)\b/i;
 
 export function instrumentCFOutputTokens(template: string): string {
-	return transformOutsideTags(template, instrumentCfTokensInSegment);
+	return transformMjmlTemplate(template, instrumentCfTokensInSegment, instrumentCfTokensInTag);
 }
 
-// Discover all {{cf.*}} / {{{cf.*}}} output bindings used in the template body text.
+// Discover all {{cf.*}} / {{{cf.*}}} output bindings used in the template.
 export function collectCFOutputBindings(template: string): string[] {
 	const found = new Set<string>();
-	transformOutsideTags(template, (segment) => {
-		collectCfTokensInSegment(segment, found);
-		return segment;
-	});
+	transformMjmlTemplate(
+		template,
+		(segment) => {
+			collectCfTokensInSegment(segment, found);
+			return segment;
+		},
+		(tag) => {
+			collectCfPathsInText(tag, found);
+			return tag;
+		}
+	);
 	return [...found];
 }
 
@@ -153,7 +219,50 @@ function mapFieldTypeToAUE(type: UEBinding['fieldType']): string {
 	}
 }
 
-function transformOutsideTags(input: string, transform: (segment: string) => string): string {
+function instrumentCfTokensInTag(tag: string): string {
+	if (!UE_ATTRIBUTE_TAG_RE.test(tag)) return tag;
+
+	const paths = collectCfPathsFromTag(tag);
+	if (paths.length === 0) return tag;
+
+	const fieldPath = pickPrimaryTagBindingPath(tag, paths);
+	if (!fieldPath) return tag;
+
+	const comment = fmBindingComment(fieldPath);
+	if (tag.includes(comment)) return tag;
+
+	return `${comment}${tag}`;
+}
+
+function collectCfPathsFromTag(tag: string): string[] {
+	const found = new Set<string>();
+	collectCfPathsInText(tag, found);
+	return [...found];
+}
+
+function pickPrimaryTagBindingPath(tag: string, paths: string[]): string | null {
+	if (paths.length === 0) return null;
+	if (paths.length === 1) return paths[0] ?? null;
+
+	const attrOrder = ['src', 'href', 'alt'] as const;
+	for (const attr of attrOrder) {
+		const attrRe = new RegExp(`${attr}\\s*=\\s*["'][^"']*["']`, 'i');
+		const attrMatch = tag.match(attrRe);
+		if (!attrMatch) continue;
+		const attrValue = attrMatch[0];
+		for (const path of paths) {
+			if (attrValue.includes(path)) return path;
+		}
+	}
+
+	return paths[0] ?? null;
+}
+
+function transformMjmlTemplate(
+	input: string,
+	transformText: (segment: string) => string,
+	transformTag: (tag: string) => string
+): string {
 	let output = '';
 	let textStart = 0;
 	let inTag = false;
@@ -161,13 +270,13 @@ function transformOutsideTags(input: string, transform: (segment: string) => str
 	for (let i = 0; i < input.length; i++) {
 		const ch = input[i];
 		if (!inTag && ch === '<') {
-			output += transform(input.slice(textStart, i));
+			output += transformText(input.slice(textStart, i));
 			inTag = true;
 			textStart = i;
 			continue;
 		}
 		if (inTag && ch === '>') {
-			output += input.slice(textStart, i + 1);
+			output += transformTag(input.slice(textStart, i + 1));
 			inTag = false;
 			textStart = i + 1;
 		}
@@ -175,7 +284,7 @@ function transformOutsideTags(input: string, transform: (segment: string) => str
 
 	if (textStart < input.length) {
 		const remainder = input.slice(textStart);
-		output += inTag ? remainder : transform(remainder);
+		output += inTag ? transformTag(remainder) : transformText(remainder);
 	}
 
 	return output;
@@ -198,4 +307,8 @@ function isInsideBindingSpan(segment: string, offset: number): boolean {
 
 function escapeAttr(value: string): string {
 	return value.replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function escapeRegExp(value: string): string {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

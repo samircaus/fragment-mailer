@@ -21,6 +21,16 @@ import {
 	upsertAjoFragmentDraft
 } from '$lib/db/ajo-fragment-drafts.js';
 import { getDb } from '$lib/db/email-status.js';
+import { compileFragmentMjmlToHtml } from '$lib/fragments/compile-mjml.js';
+import type { AppEnv } from '$lib/aem/env.js';
+
+async function ajoExpressionFromMjml(mjml: string, env: AppEnv): Promise<string> {
+	const compiled = await compileFragmentMjmlToHtml(mjml, env);
+	if ('error' in compiled) {
+		throw error(422, compiled.error);
+	}
+	return compiled.html;
+}
 
 function ajoErrorDetail(raw: string, fallback: string): string {
 	const jsonStart = raw.indexOf('{');
@@ -143,11 +153,12 @@ export const PUT: RequestHandler = async ({ params, request, platform }) => {
 			throw error(503, 'AJO credentials not configured');
 		}
 
+		const ajoExpression = await ajoExpressionFromMjml(parsed.data.expression, env);
 		const payload = buildAjoExpressionFragmentPayload({
 			name: parsed.data.name ?? localDraft.name,
 			description: parsed.data.description ?? localDraft.description,
-			expression: parsed.data.expression,
-			subType: parsed.data.subType ?? localDraft.subType
+			expression: ajoExpression,
+			subType: 'HTML'
 		});
 		const created = await createFragment(payload, env);
 		if (created.error || !created.data) {
@@ -189,11 +200,12 @@ export const PUT: RequestHandler = async ({ params, request, platform }) => {
 		throw error(status, existing.error ?? 'Fragment not found');
 	}
 
+	const ajoExpression = await ajoExpressionFromMjml(parsed.data.expression, env);
 	const payload = buildAjoExpressionFragmentPayload({
 		name: parsed.data.name ?? existing.data.name,
 		description: parsed.data.description ?? existing.data.description,
-		expression: parsed.data.expression,
-		subType: parsed.data.subType ?? existing.data.subType ?? 'HTML'
+		expression: ajoExpression,
+		subType: 'HTML'
 	});
 
 	const etag = parsed.data.etag ?? existing.data.etag;

@@ -180,7 +180,7 @@
 						id="new-fragment-name"
 						type="text"
 						bind:value={createName}
-						placeholder="Footer legal copy"
+						placeholder="My fragment"
 						maxlength="120"
 						required
 						disabled={isCreating}
@@ -191,7 +191,7 @@
 					<textarea
 						id="new-fragment-description"
 						bind:value={createDescription}
-						placeholder="What this fragment is for"
+						placeholder="Describe fragment"
 						maxlength="600"
 						rows="2"
 						disabled={isCreating}

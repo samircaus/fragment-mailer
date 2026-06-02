@@ -93,10 +93,31 @@ export function normalizeFragmentFields(fields: Record<string, unknown>): Record
 	const out: Record<string, unknown> = {};
 
 	for (const [key, value] of Object.entries(fields)) {
+		if (key === '_path' && typeof value === 'string') {
+			out._path = value;
+			continue;
+		}
 		if (key.startsWith('_') || key === 'id' || key.endsWith('Html') || key.endsWith('Url')) {
 			continue;
 		}
-		out[key] = normalizeFieldValue(value, key);
+		const normalized = normalizeFieldValue(value, key);
+		if (
+			key !== '_path' &&
+			normalized !== null &&
+			typeof normalized === 'object' &&
+			!Array.isArray(normalized) &&
+			typeof value === 'object' &&
+			value !== null &&
+			!Array.isArray(value) &&
+			typeof (value as Record<string, unknown>)._path === 'string'
+		) {
+			(out as Record<string, unknown>)[key] = {
+				_path: (value as Record<string, unknown>)._path,
+				...(normalized as Record<string, unknown>)
+			};
+			continue;
+		}
+		out[key] = normalized;
 	}
 
 	// Backward-compatible derived keys on the root fragment only.
