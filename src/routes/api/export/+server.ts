@@ -11,7 +11,7 @@ import { fetchCampaignFragmentAtPath } from '$lib/aem/delivery.js';
 import { aemAssetBaseUrl, type AppEnv } from '$lib/aem/env.js';
 import { resolveAppEnv } from '$lib/server/app-env.js';
 import type { CFFragment, ResolvedCFData } from '$lib/aem/types.js';
-import { loadTemplate } from '$lib/templates/service.js';
+import { loadTemplateForCampaign } from '$lib/templates/load-for-campaign.js';
 import type { TemplateDefinition } from '$lib/templates/types.js';
 import { resolve } from '$lib/render/resolve.js';
 import { compileMJML } from '$lib/render/mjml.js';
@@ -41,8 +41,12 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 
 	const { campaign, cf: primaryCF } = campaignResult.data;
 
-	// Load template
-	const templateResult = await loadTemplate(platform, campaign.templateId);
+	const templateResult = await loadTemplateForCampaign(
+		platform,
+		campaign.templateId,
+		primaryCF.modelPath,
+		env
+	);
 	if (templateResult.error) {
 		throw error(404, templateResult.error);
 	}

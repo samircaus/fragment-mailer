@@ -70,10 +70,22 @@ export function buildFieldMappings(
 	});
 }
 
-function aemFieldToTemplateType(type: string): TemplateFieldDefinition['type'] {
+function isImageLikeFieldName(name: string): boolean {
+	return /(?:^|_)(?:image|banner|photo|thumbnail)(?:$|_)/i.test(name);
+}
+
+function inferReferencedCfModel(fieldName: string): string | undefined {
+	if (/offer/i.test(fieldName)) return 'Offer';
+	if (/hero/i.test(fieldName)) return 'Offer';
+	return undefined;
+}
+
+function aemFieldToTemplateType(type: string, fieldName: string): TemplateFieldDefinition['type'] {
 	const t = type.toLowerCase();
 	if (t.includes('html') || t.includes('richtext') || t === 'multiline') return 'richtext';
-	if (t.includes('fragment') || t.includes('reference')) return 'reference';
+	if (t.includes('asset')) return 'url';
+	if (t.includes('fragment') || t.includes('content-fragment')) return 'reference';
+	if (t.includes('reference') && isImageLikeFieldName(fieldName)) return 'url';
 	if (t.includes('url') || t.includes('link')) return 'url';
 	return 'text';
 }
@@ -125,12 +137,15 @@ export function syncTemplateFromAemModel(input: SyncTemplateFromAemInput): SyncT
 	for (const aemField of aemModel.fields) {
 		const fieldId = aemField.name;
 		const modelId = `${slugId(templateId)}-${slugId(fieldId)}`;
-		const templateType = aemFieldToTemplateType(aemField.type);
+		const templateType = aemFieldToTemplateType(aemField.type, fieldId);
+		const referencedModel =
+			templateType === 'reference' ? inferReferencedCfModel(fieldId) : undefined;
 
 		fields[fieldId] = {
 			type: templateType,
 			required: aemField.required,
-			modelId
+			modelId,
+			...(referencedModel ? { model: referencedModel } : {})
 		};
 
 		componentModels.push({

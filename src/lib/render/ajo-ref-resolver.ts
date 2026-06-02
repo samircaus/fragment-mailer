@@ -6,6 +6,7 @@ import {
 } from '$lib/aem/author.js';
 import type { AEMClientOptions } from '$lib/aem/client.js';
 import type { AppEnv } from '$lib/aem/env.js';
+import { isCfReferencePath } from '$lib/aem/hydrate-references.js';
 import type { AuthorFragment, AuthorField } from '$lib/types/aem.js';
 
 export interface ResolvedFragmentRef {
@@ -154,6 +155,12 @@ async function resolveFieldStep(
 	const refId = extractFragmentReferenceId(field, index);
 	if (!refId) {
 		return { error: `No fragment reference in field "${fieldName}"` };
+	}
+
+	if (typeof refId === 'string' && !looksLikeUuid(refId) && !isCfReferencePath(refId)) {
+		return {
+			error: `Field "${fieldName}" points to a DAM asset, not a content fragment (${refId})`
+		};
 	}
 
 	if (looksLikeUuid(refId)) {

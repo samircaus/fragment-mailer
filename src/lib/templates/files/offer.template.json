@@ -3,33 +3,7 @@
   "name": "Offer Email",
   "version": "1.0.0",
   "cfModel": "Offer",
-  "fields": {
-    "title": {
-      "type": "text",
-      "required": true,
-      "modelId": "offer-title"
-    },
-    "bannerImage": {
-      "type": "reference",
-      "model": "Image",
-      "required": false
-    },
-    "emailCopy": {
-      "type": "richtext",
-      "required": true,
-      "modelId": "offer-email-copy"
-    },
-    "ctaLabel": {
-      "type": "text",
-      "required": false,
-      "modelId": "offer-cta"
-    },
-    "ctaLink": {
-      "type": "url",
-      "required": false,
-      "modelId": "offer-cta"
-    }
-  },
+  "fields": {},
   "profileTokens": [],
   "previewSize": { "width": 600, "height": 900 }
 }

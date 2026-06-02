@@ -1,8 +1,9 @@
 // Infer and inject {% load varName as fragment ref='...' %} from template + campaign context.
 // Authors normally use {{ cf.field }} / {{ cf.offer.headline }}; export adds load tags automatically.
 
-import type { TemplateDefinition } from '$lib/templates/registry.js';
-import type { AuthorFragment } from '$lib/types/aem.js';
+import { isCfReferencePath } from '$lib/aem/hydrate-references.js';
+import type { TemplateDefinition, TemplateFieldDefinition } from '$lib/templates/registry.js';
+import type { AuthorField, AuthorFragment } from '$lib/types/aem.js';
 import { parseLoadTags, type ParsedLoadTag } from './ajo-load-tags.js';
 
 export interface LoadTagSpec {
@@ -12,7 +13,29 @@ export interface LoadTagSpec {
 
 const CF_ROOT_RE = /\bcf\.([A-Za-z_]\w*)/g;
 
-/** Collect CF reference field names from template definition and hydrated campaign. */
+/** Template `reference` fields that point at another CF (not DAM assets like bannerImage). */
+export function isFragmentReferenceField(
+	field: Pick<TemplateFieldDefinition, 'type' | 'model'>,
+	fieldName?: string
+): boolean {
+	if (field.type !== 'reference') return false;
+	const model = field.model?.trim();
+	if (model && /^(image|asset|dam|media)$/i.test(model)) return false;
+	if (!model && fieldName && isImageLikeFieldName(fieldName)) return false;
+	return true;
+}
+
+function isImageLikeFieldName(name: string): boolean {
+	return /(?:^|_)(?:image|banner|photo|thumbnail)(?:$|_)/i.test(name);
+}
+
+function isAuthorFragmentReferenceField(field: AuthorField): boolean {
+	const type = field.type.toLowerCase();
+	if (type.includes('asset')) return false;
+	return type.includes('fragment') || type.includes('content-fragment');
+}
+
+/** Collect CF fragment-reference field names (excludes asset-reference / DAM image paths). */
 export function collectReferenceFieldNames(
 	definition?: TemplateDefinition,
 	campaign?: AuthorFragment
@@ -21,18 +44,20 @@ export function collectReferenceFieldNames(
 
 	if (definition) {
 		for (const [name, field] of Object.entries(definition.fields)) {
-			if (field.type === 'reference') names.add(name);
+			if (isFragmentReferenceField(field, name)) names.add(name);
 		}
 	}
 
 	for (const ref of campaign?.references ?? []) {
-		if (ref.fieldName) names.add(ref.fieldName);
+		if (!ref.fieldName) continue;
+		const field = campaign.fields?.find((f) => f.name === ref.fieldName);
+		if (field && !isAuthorFragmentReferenceField(field)) continue;
+		const hasFragmentItem = ref.items?.some((i) => i.type === 'fragment' && i.fragment);
+		if (hasFragmentItem) names.add(ref.fieldName);
 	}
 
 	for (const field of campaign?.fields ?? []) {
-		if (field.type === 'fragment-reference' || field.type === 'content-fragment-reference') {
-			names.add(field.name);
-		}
+		if (isAuthorFragmentReferenceField(field)) names.add(field.name);
 	}
 
 	return names;
@@ -69,9 +94,13 @@ export function inferLoadTagSpecs(
 			mjml.includes(`cf.${refName}.`) ||
 			new RegExp(`\\bcf\\.${refName}\\b`).test(mjml);
 		const onCampaign = campaign?.references?.some((r) => r.fieldName === refName);
-		if (usedInTemplate || onCampaign) {
-			specs.push({ varName: refName, refExpression: `this.${refName}` });
-		}
+		if (!usedInTemplate && !onCampaign) continue;
+
+		const campaignField = campaign?.fields?.find((f) => f.name === refName);
+		if (campaignField && !isAuthorFragmentReferenceField(campaignField)) continue;
+		if (campaignField && fieldValueLooksLikeDamAsset(campaignField)) continue;
+
+		specs.push({ varName: refName, refExpression: `this.${refName}` });
 	}
 
 	// Any cf.* usage at all → at least bind the campaign CF.
@@ -80,6 +109,12 @@ export function inferLoadTagSpecs(
 	}
 
 	return specs;
+}
+
+function fieldValueLooksLikeDamAsset(field: AuthorField): boolean {
+	const pick = field.values?.[0];
+	if (typeof pick === 'string') return !isCfReferencePath(pick);
+	return false;
 }
 
 /** Rewrite cf.featuredOffer.headline → featuredOffer.headline for loaded reference vars. */

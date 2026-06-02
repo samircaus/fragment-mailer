@@ -46,6 +46,26 @@ describe('cf-fields', () => {
 		expect(rows[0]?.mismatch).toContain('emailBody');
 	});
 
+	it('maps asset-reference fields to url type for AJO load inference', () => {
+		const result = syncTemplateFromAemModel({
+			templateId: 'offer',
+			aemModel: {
+				id: 'offer-model',
+				title: 'Offer',
+				fields: [
+					{
+						name: 'bannerImage',
+						label: 'Banner',
+						type: 'asset-reference',
+						required: false,
+						multiple: false
+					}
+				]
+			}
+		});
+		expect(result.definition.fields.bannerImage?.type).toBe('url');
+	});
+
 	it('syncTemplateFromAemModel uses AEM field names for UE', () => {
 		const result = syncTemplateFromAemModel({
 			templateId: 'offer',

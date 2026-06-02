@@ -9,7 +9,7 @@ import { z } from 'zod';
 import { fetchCF, normalizeCF } from '$lib/aem/client.js';
 import { aemAssetBaseUrl, aemClientOptions } from '$lib/aem/env.js';
 import type { CFFragment } from '$lib/aem/types.js';
-import { loadTemplate } from '$lib/templates/service.js';
+import { loadTemplateForCampaign } from '$lib/templates/load-for-campaign.js';
 import { buildRenderCfContext } from '$lib/render/cf-context.js';
 import { resolve } from '$lib/render/resolve.js';
 import { compileMJML } from '$lib/render/mjml.js';
@@ -51,13 +51,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 	}
 
 	const { templateId, cfPath, mode, personaId } = parsed.data;
-
-	// Load template
-	const templateResult = await loadTemplate(platform, templateId);
-	if (templateResult.error) {
-		throw error(404, templateResult.error);
-	}
-	const { definition, mjml } = templateResult.data!;
+	const appEnv = resolveAppEnv(env);
 
 	// Fetch CF
 	const cfResult = await fetchCF(cfPath, aemOpts);
@@ -66,10 +60,20 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 	}
 	const cf = normalizeCF(cfResult.data as CFFragment);
 
+	const templateResult = await loadTemplateForCampaign(
+		platform,
+		templateId,
+		cf.modelPath,
+		appEnv
+	);
+	if (templateResult.error) {
+		throw error(404, templateResult.error);
+	}
+	const { definition, mjml } = templateResult.data!;
+
 	// Build render context
 	const persona = await getPersonaById(platform, personaId ?? 'persona-1');
 	const profileData = flattenPersona(persona);
-	const appEnv = resolveAppEnv(env);
 
 	const context = {
 		cf: buildRenderCfContext(cf.fields, aemAssetBaseUrl(appEnv)),

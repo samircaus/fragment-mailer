@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { buildUEBindings, resolveBindingCFPath } from '../src/lib/render/ue-bindings.js';
+import {
+	buildUEBindings,
+	resolveAemPropName,
+	resolveBindingCFPath
+} from '../src/lib/render/ue-bindings.js';
 
 describe('resolveBindingCFPath — nested fragment refs', () => {
 	it('resolves referenced CF path from hydrated heroOffer._path', () => {
@@ -15,6 +19,43 @@ describe('resolveBindingCFPath — nested fragment refs', () => {
 			}
 		);
 		expect(cfPath).toBe('/content/dam/email/en/offers/hero-offer-1');
+	});
+});
+
+describe('resolveAemPropName', () => {
+	it('uses CF token property name, not template field id or aueProp', () => {
+		expect(resolveAemPropName('cf.emailCopy')).toBe('emailCopy');
+		expect(resolveAemPropName('cf.heroOffer.bannerImage')).toBe('bannerImage');
+		expect(resolveAemPropName('cf.emailCopyHtml')).toBe('emailCopy');
+	});
+});
+
+describe('buildUEBindings — legacy template field id', () => {
+	it('maps cf.emailCopy to emailCopy even when template field id is emailBody', () => {
+		const bindings = buildUEBindings({
+			definition: {
+				id: 'offer',
+				name: 'Offer',
+				version: '1.0.0',
+				cfModel: 'Offer',
+				fields: {
+					emailBody: {
+						type: 'richtext',
+						required: true,
+						binding: 'cf.emailCopy',
+						aueProp: 'emailBody',
+						modelId: 'offer-email-copy'
+					}
+				},
+				profileTokens: [],
+				previewSize: { width: 600, height: 900 }
+			},
+			discoveredBindings: [],
+			defaultCfPath: '/content/dam/offers/spring',
+			cfFields: { emailCopy: '<p>Hi</p>' }
+		});
+
+		expect(bindings[0]?.fieldName).toBe('emailCopy');
 	});
 });
 

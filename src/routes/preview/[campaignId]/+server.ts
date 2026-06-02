@@ -7,7 +7,7 @@
 import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 
-import { loadTemplate } from '$lib/templates/service.js';
+import { loadTemplateForCampaign } from '$lib/templates/load-for-campaign.js';
 import { resolve } from '$lib/render/resolve.js';
 import { compileMJML } from '$lib/render/mjml.js';
 import {
@@ -51,12 +51,17 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
 	const { campaign, cf } = campaignResult.data;
 	const templateId = url.searchParams.get('templateId') ?? campaign.templateId ?? 'promo';
 
-	// Load template
-	const templateResult = await loadTemplate(platform, templateId);
+	const templateResult = await loadTemplateForCampaign(
+		platform,
+		templateId,
+		cf.modelPath,
+		env
+	);
 	if (templateResult.error) {
 		throw error(404, templateResult.error);
 	}
 	const { definition, mjml } = templateResult.data!;
+	const campaignIdEncoded = encodeURIComponent(campaignId);
 
 	const cfContext = buildRenderCfContext(cf.fields, aemAssetBaseUrl(env));
 
@@ -110,8 +115,8 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
 		env?.AEM_BASE_URL ?? 'https://author-p00000-e00000.adobeaemcloud.com',
 		url.toString(),
 		{
-			componentDefinitionUrl: `/api/templates/${encodeURIComponent(templateId)}/component-definition`,
-			componentModelsUrl: `/api/templates/${encodeURIComponent(templateId)}/component-models`
+			componentDefinitionUrl: `/api/templates/${encodeURIComponent(templateId)}/component-definition?campaignId=${campaignIdEncoded}`,
+			componentModelsUrl: `/api/templates/${encodeURIComponent(templateId)}/component-models?campaignId=${campaignIdEncoded}`
 		}
 	);
 

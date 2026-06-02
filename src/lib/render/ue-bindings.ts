@@ -55,7 +55,7 @@ function collectTemplateBindingPaths(
 
 function toUEBinding(
 	fieldPath: string,
-	fieldId: string,
+	_fieldId: string,
 	fieldDef: TemplateFieldDefinition,
 	defaultCfPath: string,
 	cfFields: Record<string, unknown>
@@ -63,7 +63,7 @@ function toUEBinding(
 	return {
 		fieldPath,
 		cfPath: resolveBindingCFPath(fieldPath, defaultCfPath, cfFields),
-		fieldName: fieldDef.aueProp ?? fieldId,
+		fieldName: resolveAemPropName(fieldPath),
 		fieldType: fieldDef.type,
 		modelId: fieldDef.modelId
 	};
@@ -75,29 +75,17 @@ function resolveDiscoveredBinding(
 ): Pick<UEBinding, 'fieldName' | 'fieldType' | 'modelId'> {
 	const tokenName = bindingTokenName(fieldPath);
 
-	if (tokenName.endsWith('Html')) {
-		const baseName = tokenName.slice(0, -4);
-		const baseField = definition.fields[baseName];
-		if (baseField) {
-			return {
-				fieldName: baseField.aueProp ?? baseName,
-				fieldType: baseField.type,
-				modelId: baseField.modelId
-			};
-		}
-	}
-
 	const directField = definition.fields[tokenName];
 	if (directField) {
 		return {
-			fieldName: directField.aueProp ?? tokenName,
+			fieldName: resolveAemPropName(fieldPath),
 			fieldType: directField.type,
 			modelId: directField.modelId
 		};
 	}
 
 	return {
-		fieldName: tokenName,
+		fieldName: resolveAemPropName(fieldPath),
 		fieldType: inferFieldTypeFromTokenName(tokenName),
 		modelId: undefined
 	};
@@ -114,6 +102,13 @@ function inferFieldTypeFromTokenName(
 function bindingTokenName(fieldPath: string): string {
 	const parts = fieldPath.split('.');
 	return parts[parts.length - 1] ?? fieldPath;
+}
+
+/** AEM CF API property for data-aue-prop (derived from the render token, not template field id). */
+export function resolveAemPropName(fieldPath: string): string {
+	const token = bindingTokenName(fieldPath);
+	if (token.endsWith('Html')) return token.slice(0, -4);
+	return token;
 }
 
 export function resolveBindingCFPath(

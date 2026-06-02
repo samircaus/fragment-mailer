@@ -1,14 +1,37 @@
 import { describe, it, expect } from 'vitest';
 import promoDefinition from '../src/lib/templates/files/promo.template.json';
+import { syncTemplateFromAemModel } from '../src/lib/templates/cf-fields.js';
 import {
 	collectCfRootsUsedInTemplate,
+	collectReferenceFieldNames,
 	ensureLoadTagsInTemplate,
 	inferLoadTagSpecs,
+	isFragmentReferenceField,
 	rewriteLegacyCfReferencePaths
 } from '../src/lib/render/ajo-load-inject.js';
 import type { TemplateDefinition } from '../src/lib/templates/registry.js';
 
 const promoDef = promoDefinition as TemplateDefinition;
+
+/** Offer fields as AEM Author would return them (asset vs fragment-reference). */
+const offerDef = syncTemplateFromAemModel({
+	templateId: 'offer',
+	aemModel: {
+		id: 'offer-model',
+		title: 'Offer',
+		fields: [
+			{ name: 'title', label: 'Title', type: 'text', required: true, multiple: false },
+			{
+				name: 'bannerImage',
+				label: 'Banner',
+				type: 'asset-reference',
+				required: false,
+				multiple: false
+			},
+			{ name: 'emailCopy', label: 'Email Copy', type: 'text/html', required: true, multiple: false }
+		]
+	}
+}).definition;
 
 describe('inferLoadTagSpecs', () => {
 	it('infers cf + reference loads from promo-style cf.* usage', () => {
@@ -27,6 +50,17 @@ describe('inferLoadTagSpecs', () => {
 		const mjml = `<mj-body>{{ cf.title }}{{{ cf.emailCopy }}}</mj-body>`;
 		const specs = inferLoadTagSpecs(mjml);
 		expect(specs).toEqual([{ varName: 'cf', refExpression: 'this' }]);
+	});
+
+	it('does not treat bannerImage as a fragment load when it is a DAM asset field', () => {
+		const mjml = `<mj-body>{% if cf.bannerImage %}<mj-image src="{{{cf.bannerImage}}}" />{% endif %}</mj-body>`;
+		const refs = collectReferenceFieldNames(offerDef);
+		expect(refs.has('bannerImage')).toBe(false);
+		expect(isFragmentReferenceField(offerDef.fields.bannerImage!, 'bannerImage')).toBe(false);
+
+		const specs = inferLoadTagSpecs(mjml, offerDef);
+		expect(specs).toEqual([{ varName: 'cf', refExpression: 'this' }]);
+		expect(specs.some((s) => s.varName === 'bannerImage')).toBe(false);
 	});
 });
 

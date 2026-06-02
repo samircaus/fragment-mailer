@@ -8,7 +8,7 @@ import type { RequestHandler } from './$types';
 
 import { ajoSandboxName, type AppEnv } from '$lib/aem/env.js';
 import { getCampaignWithCF } from '$lib/campaigns/service.js';
-import { loadTemplate } from '$lib/templates/service.js';
+import { loadTemplateForCampaign } from '$lib/templates/load-for-campaign.js';
 import { resolveAppEnv } from '$lib/server/app-env.js';
 import { transformTemplateForAjo } from '$lib/ajo/export-pipeline.js';
 import { createContentTemplate, updateContentTemplate } from '$lib/ajo/client.js';
@@ -77,8 +77,13 @@ async function runAjoExport(
 		throw error(status, message);
 	}
 
-	const { campaign } = campaignResult.data;
-	const templateResult = await loadTemplate(platform, campaign.templateId);
+	const { campaign, cf } = campaignResult.data;
+	const templateResult = await loadTemplateForCampaign(
+		platform,
+		campaign.templateId,
+		cf.modelPath,
+		env
+	);
 	if (templateResult.error || !templateResult.data) {
 		throw error(404, templateResult.error ?? 'Template not found');
 	}

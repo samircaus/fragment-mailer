@@ -5,7 +5,10 @@ export interface TemplateFieldDefinition {
 	binding?: string;
 	/** @deprecated Legacy render token override (e.g. cf.emailCopyHtml). */
 	renderBinding?: string;
-	/** AEM CF property for data-aue-prop when different from the template field id. */
+	/**
+	 * Legacy UE property alias (mapping UI only). Preview `data-aue-prop` is derived from
+	 * the render token path (`cf.emailCopy` → `emailCopy`), not this field.
+	 */
 	aueProp?: string;
 	model?: string;
 	modelId?: string;
