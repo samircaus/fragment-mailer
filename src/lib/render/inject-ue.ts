@@ -1,3 +1,4 @@
+import { collectLetVariableBindings, extractLetVarPath, parseLetFragmentAliases } from '$lib/render/let-bindings.js';
 import { cfUeResourceUrn } from '$lib/ue/context.js';
 
 // Universal Editor (UE) attribute injector.
@@ -154,17 +155,27 @@ export function wrapWithBinding(value: string, fieldPath: string): string {
 // Wrap all render-output CF tokens ({{cf.*}}) in data-fm-binding spans.
 // This runs on template MJML before resolver execution, so compiled HTML keeps
 // stable markers that UE can instrument even if template definitions lag behind.
-function instrumentCfTokensInSegment(segment: string): string {
+function instrumentCfTokensInSegment(segment: string, letAliases: Map<string, string>): string {
+	const withCf = instrumentOutputTokensInSegment(segment, letAliases, (expr) => extractCFPath(expr));
+	return instrumentOutputTokensInSegment(withCf, letAliases, (expr, roots) =>
+		extractLetVarPath(expr, roots)
+	);
+}
+
+function instrumentOutputTokensInSegment(
+	segment: string,
+	letAliases: Map<string, string>,
+	extractPath: (expr: string, letRoots: Set<string>) => string | null
+): string {
+	const letRoots = new Set(letAliases.keys());
 	const wrap = (full: string, expr: string, offset: number, input: string) => {
-		const fieldPath = extractCFPath(expr);
+		const fieldPath = extractPath(expr, letRoots);
 		if (!fieldPath) return full;
 		if (isInsideBindingSpan(input, offset)) return full;
 		return wrapWithBinding(full, fieldPath);
 	};
 
-	return segment
-		.replace(TRIPLE_OUTPUT_TOKEN_RE, wrap)
-		.replace(OUTPUT_TOKEN_RE, wrap);
+	return segment.replace(TRIPLE_OUTPUT_TOKEN_RE, wrap).replace(OUTPUT_TOKEN_RE, wrap);
 }
 
 function collectCfTokensInSegment(segment: string, found: Set<string>): void {
@@ -185,11 +196,17 @@ function collectCfPathsInText(text: string, found: Set<string>): void {
 const UE_ATTRIBUTE_TAG_RE = /\b(?:mj-image|mj-button)\b/i;
 
 export function instrumentCFOutputTokens(template: string): string {
-	return transformMjmlTemplate(template, instrumentCfTokensInSegment, instrumentCfTokensInTag);
+	const letAliases = parseLetFragmentAliases(template);
+	return transformMjmlTemplate(
+		template,
+		(seg) => instrumentCfTokensInSegment(seg, letAliases),
+		(tag) => instrumentCfTokensInTag(tag, letAliases)
+	);
 }
 
-// Discover all {{cf.*}} / {{{cf.*}}} output bindings used in the template.
+// Discover all {{cf.*}} and {{offer0.*}} output bindings used in the template.
 export function collectCFOutputBindings(template: string): string[] {
+	const letAliases = parseLetFragmentAliases(template);
 	const found = new Set<string>();
 	transformMjmlTemplate(
 		template,
@@ -202,6 +219,9 @@ export function collectCFOutputBindings(template: string): string[] {
 			return tag;
 		}
 	);
+	for (const path of collectLetVariableBindings(template, letAliases)) {
+		found.add(path);
+	}
 	return [...found];
 }
 
@@ -219,10 +239,10 @@ function mapFieldTypeToAUE(type: UEBinding['fieldType']): string {
 	}
 }
 
-function instrumentCfTokensInTag(tag: string): string {
+function instrumentCfTokensInTag(tag: string, letAliases: Map<string, string>): string {
 	if (!UE_ATTRIBUTE_TAG_RE.test(tag)) return tag;
 
-	const paths = collectCfPathsFromTag(tag);
+	const paths = collectCfPathsFromTag(tag, letAliases);
 	if (paths.length === 0) return tag;
 
 	const fieldPath = pickPrimaryTagBindingPath(tag, paths);
@@ -234,9 +254,17 @@ function instrumentCfTokensInTag(tag: string): string {
 	return `${comment}${tag}`;
 }
 
-function collectCfPathsFromTag(tag: string): string[] {
+function collectCfPathsFromTag(tag: string, letAliases: Map<string, string>): string[] {
 	const found = new Set<string>();
 	collectCfPathsInText(tag, found);
+	const letRoots = new Set(letAliases.keys());
+	const collectVar = (_full: string, expr: string) => {
+		const path = extractLetVarPath(expr, letRoots);
+		if (path) found.add(path);
+		return _full;
+	};
+	tag.replace(TRIPLE_OUTPUT_TOKEN_RE, collectVar);
+	tag.replace(OUTPUT_TOKEN_RE, collectVar);
 	return [...found];
 }
 

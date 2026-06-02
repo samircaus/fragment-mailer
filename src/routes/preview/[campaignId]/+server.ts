@@ -106,7 +106,8 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
 		definition,
 		discoveredBindings,
 		defaultCfPath: cf.path,
-		cfFields: cf.fields
+		cfFields: cf.fields,
+		mjml: mjmlWithFragments
 	});
 	let html = injectUEAttributes(compileResult.html, bindings);
 	html = injectUEBody(html, cf.path);

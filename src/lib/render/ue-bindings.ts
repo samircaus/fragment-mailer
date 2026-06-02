@@ -1,5 +1,6 @@
 import type { TemplateDefinition, TemplateFieldDefinition } from '$lib/templates/registry.js';
 import { resolveCfBinding } from '$lib/templates/cf-fields.js';
+import { buildLetUEBindings, parseLetFragmentAliases } from '$lib/render/let-bindings.js';
 import type { UEBinding } from '$lib/render/inject-ue.js';
 
 export interface BuildUEBindingsInput {
@@ -7,6 +8,8 @@ export interface BuildUEBindingsInput {
 	discoveredBindings: string[];
 	defaultCfPath: string;
 	cfFields: Record<string, unknown>;
+	/** Raw MJML — used to resolve {% let offer0 = cf.offers.0 %} UE targets. */
+	mjml?: string;
 }
 
 /** Build UE bindings for all template fields plus discovered MJML cf tokens. */
@@ -28,6 +31,9 @@ export function buildUEBindings(input: BuildUEBindingsInput): UEBinding[] {
 
 	for (const fieldPath of discoveredBindings) {
 		if (coveredPaths.has(fieldPath)) continue;
+		if (fieldPath.includes('.') && !fieldPath.startsWith('cf.')) {
+			continue;
+		}
 		coveredPaths.add(fieldPath);
 		const resolved = resolveDiscoveredBinding(fieldPath, definition);
 		bindings.push({
@@ -37,6 +43,26 @@ export function buildUEBindings(input: BuildUEBindingsInput): UEBinding[] {
 			fieldType: resolved.fieldType,
 			modelId: resolved.modelId
 		});
+	}
+
+	if (input.mjml) {
+		const letAliases = parseLetFragmentAliases(input.mjml);
+		const letPaths = discoveredBindings.filter(
+			(p) => p.includes('.') && !p.startsWith('cf.') && !coveredPaths.has(p)
+		);
+		const letBindings = buildLetUEBindings({
+			letAliases,
+			discoveredPaths: letPaths,
+			cfFields,
+			defaultCfPath,
+			templateId: definition.id,
+			definition
+		});
+		for (const binding of letBindings) {
+			if (coveredPaths.has(binding.fieldPath)) continue;
+			coveredPaths.add(binding.fieldPath);
+			bindings.push(binding);
+		}
 	}
 
 	return bindings;

@@ -4,6 +4,7 @@
 import { isCfReferencePath } from '$lib/aem/hydrate-references.js';
 import type { TemplateDefinition, TemplateFieldDefinition } from '$lib/templates/registry.js';
 import type { AuthorField, AuthorFragment } from '$lib/types/aem.js';
+import { parseLetFragmentAliases } from '$lib/render/let-bindings.js';
 import { parseLoadTags, type ParsedLoadTag } from './ajo-load-tags.js';
 
 export interface LoadTagSpec {
@@ -164,6 +165,11 @@ export function ensureLoadTagsInTemplate(
 	const inferred = inferLoadTagSpecs(mjml, definition, campaign).filter(
 		(spec) => !existingVars.has(spec.varName)
 	);
+
+	for (const [varName, refExpression] of parseLetFragmentAliases(mjml)) {
+		if (existingVars.has(varName) || inferred.some((s) => s.varName === varName)) continue;
+		inferred.push({ varName, refExpression });
+	}
 
 	let output = mjml;
 	if (inferred.length > 0) {

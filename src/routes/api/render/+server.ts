@@ -108,7 +108,8 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 			definition,
 			discoveredBindings,
 			defaultCfPath: cf.path,
-			cfFields: cf.fields
+			cfFields: cf.fields,
+			mjml: mjmlWithFragments
 		});
 		finalHtml = injectUEAttributes(finalHtml, bindings);
 		finalHtml = injectUEBody(finalHtml, cf.path);
