@@ -42,7 +42,7 @@ describe('stripLoadTags', () => {
 });
 
 describe('hoistLetFragmentTagsInHtml', () => {
-	it('inserts let tags immediately after body, before preheader usage', () => {
+	it('inserts fragment tags inside the preheader hidden div', () => {
 		const html = `<!doctype html><html><body style="margin:0">
     <div style="display:none">{{cf.title}}</div>
     <div role="article">{{{cf.emailCopy}}}</div>
@@ -56,7 +56,9 @@ describe('hoistLetFragmentTagsInHtml', () => {
 		expect(letIdx).toBeGreaterThan(bodyIdx);
 		expect(letIdx).toBeLessThan(titleIdx);
 		expect(out).toContain('repoId=publish.example.com');
-		expect(out).toContain("{{fragment id='aem:uuid-123?repoId=publish.example.com' result='cf'}}");
+		expect(out).toContain(
+			'{{fragment id="aem:uuid-123?repoId=publish.example.com" result="cf"}}'
+		);
 	});
 });
 
@@ -65,7 +67,9 @@ describe('replaceLoadTags', () => {
 		const raw = "{% load cf as fragment ref='this' %}";
 		const letTag = buildLetFragmentTag('cf', 'uuid-123', 'publish.example.com');
 		const out = replaceLoadTags(raw, [{ raw, letTag }]);
-		expect(out).toContain("{{fragment id='aem:uuid-123?repoId=publish.example.com' result='cf'}}");
+		expect(out).toContain(
+			'{{fragment id="aem:uuid-123?repoId=publish.example.com" result="cf"}}'
+		);
 		expect(hasUnresolvedLoadTags(out)).toBe(false);
 	});
 });

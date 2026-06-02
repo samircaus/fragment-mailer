@@ -11,14 +11,77 @@
         font-weight="bold"
         inner-padding="14px 28px"
       />
+      <mj-image padding="0" />
+      <mj-section padding="0" />
     </mj-attributes>
     <mj-preview>{{cf.title}}</mj-preview>
+    <mj-style>
+      .offer-card {
+        border: 1px solid #E8E8ED !important;
+        border-radius: 10px !important;
+        overflow: hidden;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+      }
+      .offer-card > table {
+        border-radius: 10px !important;
+        overflow: hidden;
+      }
+      .offer-title {
+        font-size: 17px !important;
+        font-weight: bold !important;
+        color: #1A1A1A !important;
+        line-height: 1.3 !important;
+      }
+      .offer-desc,
+      .offer-desc p {
+        font-size: 14px !important;
+        color: #555555 !important;
+        line-height: 1.55 !important;
+        margin: 0 !important;
+      }
+      .offer-placeholder {
+        background-color: #F0F1F3 !important;
+        color: #8B8F98 !important;
+        font-size: 14px !important;
+        font-weight: bold !important;
+        text-align: center !important;
+        padding: 48px 16px !important;
+        min-height: 120px;
+      }
+      .offer-cta-spacer {
+        font-size: 1px !important;
+        line-height: 22px !important;
+        color: #FFFFFF !important;
+      }
+      @media only screen and (max-width: 480px) {
+        .offer-column {
+          width: 100% !important;
+          max-width: 100% !important;
+          display: block !important;
+        }
+        .offer-column > table {
+          width: 100% !important;
+        }
+        .offer-card {
+          margin-bottom: 16px !important;
+        }
+      }
+    </mj-style>
   </mj-head>
 
   <mj-body background-color="#F5F5F7">
+
+    <!-- ─── Header ─── -->
     <mj-section background-color="#FFFFFF" padding="20px 24px 8px">
       <mj-column>
-        <mj-text font-size="12px" color="#767676" align="center" text-transform="uppercase" letter-spacing="2px">
+        <mj-text
+          font-size="12px"
+          color="#767676"
+          align="center"
+          text-transform="uppercase"
+          letter-spacing="2px"
+          padding="0"
+        >
           Samir Talk
         </mj-text>
       </mj-column>
@@ -26,28 +89,38 @@
 
     <mj-section background-color="#FFFFFF" padding="8px 24px 16px">
       <mj-column>
-        <mj-text font-size="30px" color="#1A1A1A" font-weight="bold" align="left" line-height="1.25">
+        <mj-text
+          font-size="30px"
+          color="#1A1A1A"
+          font-weight="bold"
+          align="left"
+          line-height="1.25"
+          padding="0"
+        >
           {{cf.title}}
         </mj-text>
       </mj-column>
     </mj-section>
 
+    {% if cf.heroOffer.bannerImage %}
     <mj-section background-color="#FFFFFF" padding="0 24px 20px">
       <mj-column>
         <mj-image
           src="{{{cf.heroOffer.bannerImage}}}"
-          alt="{{cf.title}}"
+          alt="{{cf.heroOffer.title}}"
           padding="0"
           border-radius="8px"
         />
       </mj-column>
     </mj-section>
+    {% endif %}
 
     <mj-section background-color="#FFFFFF" padding="0 24px 24px">
       <mj-column>
-        <mj-text>
+        <mj-text padding="0 0 12px">
           Hallo {{profile.person.name.firstName}},
-          
+        </mj-text>
+        <mj-text padding="0">
           {{{cf.emailCopy}}}
         </mj-text>
       </mj-column>
@@ -63,17 +136,31 @@
     </mj-section>
     {% endif %}
 
-    <!-- ─── Offer cards (3-up on desktop, stacked on mobile) ─── -->
+    <!-- ─── Offers (white band + 3-up cards) ─── -->
     {% let offer0 = cf.offers.0 %}
     {% let offer1 = cf.offers.1 %}
     {% let offer2 = cf.offers.2 %}
-        <!-- ─── Offer cards (3-up on desktop, stacked on mobile) ─── -->
-    <mj-section background-color="#F5F5F7" padding="8px 16px 32px">
+
+    <mj-section background-color="#FFFFFF" padding="28px 24px 8px">
+      <mj-column>
+        <mj-text
+          font-size="22px"
+          font-weight="bold"
+          color="#1A1A1A"
+          align="center"
+          padding="0"
+          line-height="1.3"
+        >
+          Our Offers
+        </mj-text>
+      </mj-column>
+    </mj-section>
+
+    <mj-section background-color="#FFFFFF" padding="12px 16px 36px">
       <mj-group width="100%">
 
-        <!-- Card 1 -->
-        <mj-column width="33.33%" padding="0 8px 0 0">
-          <mj-wrapper css-class="offer-card" background-color="#FFFFFF" border-radius="8px" padding="0">
+        <mj-column css-class="offer-column" width="33.33%" padding="0 8px 16px 0" vertical-align="top">
+          <mj-wrapper css-class="offer-card" background-color="#FFFFFF" border-radius="10px" padding="0">
             {% if offer0.bannerImage %}
             <mj-image
               src="{{{offer0.bannerImage}}}"
@@ -86,29 +173,28 @@
               {{offer0.title}}
             </mj-text>
             {% endif %}
-            <mj-text css-class="offer-title" padding="16px 16px 8px">
+            <mj-text css-class="offer-title" padding="18px 18px 8px">
               {{offer0.title}}
             </mj-text>
-            {% if offer0.emailCopy %}
-            <mj-text font-size="14px" color="#555555" padding="0 16px 12px">
-              {{{offer0.emailCopy}}}
+            <mj-text css-class="offer-body" padding="0 18px 8px">
+              {% if offer0.emailCopy %}
+              <div class="offer-desc">{{{offer0.emailCopy}}}</div>
+              {% else %}
+              <div class="offer-desc">&nbsp;</div>
+              {% endif %}
             </mj-text>
-            {% endif %}
             {% if offer0.ctaLabel %}
-            <mj-button
-              href="{{offer0.ctaLink}}"
-              align="left"
-              padding="0 16px 16px"
-            >
+            <mj-button href="{{offer0.ctaLink | default: '#'}}" align="center" padding="20px 18px 22px">
               {{offer0.ctaLabel}}
             </mj-button>
+            {% else %}
+            <mj-text css-class="offer-cta-spacer" padding="0 18px 22px">&nbsp;</mj-text>
             {% endif %}
           </mj-wrapper>
         </mj-column>
 
-        <!-- Card 2 -->
-        <mj-column width="33.33%" padding="0 4px">
-          <mj-wrapper css-class="offer-card" background-color="#FFFFFF" border-radius="8px" padding="0">
+        <mj-column css-class="offer-column" width="33.33%" padding="0 4px 16px" vertical-align="top">
+          <mj-wrapper css-class="offer-card" background-color="#FFFFFF" border-radius="10px" padding="0">
             {% if offer1.bannerImage %}
             <mj-image
               src="{{{offer1.bannerImage}}}"
@@ -121,29 +207,28 @@
               {{offer1.title}}
             </mj-text>
             {% endif %}
-            <mj-text css-class="offer-title" padding="16px 16px 8px">
+            <mj-text css-class="offer-title" padding="18px 18px 8px">
               {{offer1.title}}
             </mj-text>
-            {% if offer1.emailCopy %}
-            <mj-text font-size="14px" color="#555555" padding="0 16px 12px">
-              {{{offer1.emailCopy}}}
+            <mj-text css-class="offer-body" padding="0 18px 8px">
+              {% if offer1.emailCopy %}
+              <div class="offer-desc">{{{offer1.emailCopy}}}</div>
+              {% else %}
+              <div class="offer-desc">&nbsp;</div>
+              {% endif %}
             </mj-text>
-            {% endif %}
             {% if offer1.ctaLabel %}
-            <mj-button
-              href="{{offer1.ctaLink}}"
-              align="left"
-              padding="0 16px 16px"
-            >
+            <mj-button href="{{offer1.ctaLink | default: '#'}}" align="center" padding="20px 18px 22px">
               {{offer1.ctaLabel}}
             </mj-button>
+            {% else %}
+            <mj-text css-class="offer-cta-spacer" padding="0 18px 22px">&nbsp;</mj-text>
             {% endif %}
           </mj-wrapper>
         </mj-column>
 
-        <!-- Card 3 -->
-        <mj-column width="33.33%" padding="0 0 0 8px">
-          <mj-wrapper css-class="offer-card" background-color="#FFFFFF" border-radius="8px" padding="0">
+        <mj-column css-class="offer-column" width="33.33%" padding="0 0 16px 8px" vertical-align="top">
+          <mj-wrapper css-class="offer-card" background-color="#FFFFFF" border-radius="10px" padding="0">
             {% if offer2.bannerImage %}
             <mj-image
               src="{{{offer2.bannerImage}}}"
@@ -156,22 +241,22 @@
               {{offer2.title}}
             </mj-text>
             {% endif %}
-            <mj-text css-class="offer-title" padding="16px 16px 8px">
+            <mj-text css-class="offer-title" padding="18px 18px 8px">
               {{offer2.title}}
             </mj-text>
-            {% if offer2.emailCopy %}
-            <mj-text font-size="14px" color="#555555" padding="0 16px 12px">
-              {{{offer2.emailCopy}}}
+            <mj-text css-class="offer-body" padding="0 18px 8px">
+              {% if offer2.emailCopy %}
+              <div class="offer-desc">{{{offer2.emailCopy}}}</div>
+              {% else %}
+              <div class="offer-desc">&nbsp;</div>
+              {% endif %}
             </mj-text>
-            {% endif %}
             {% if offer2.ctaLabel %}
-            <mj-button
-              href="{{offer2.ctaLink}}"
-              align="left"
-              padding="0 16px 16px"
-            >
+            <mj-button href="{{offer2.ctaLink | default: '#'}}" align="center" padding="20px 18px 22px">
               {{offer2.ctaLabel}}
             </mj-button>
+            {% else %}
+            <mj-text css-class="offer-cta-spacer" padding="0 18px 22px">&nbsp;</mj-text>
             {% endif %}
           </mj-wrapper>
         </mj-column>
@@ -181,8 +266,8 @@
 
     <mj-section background-color="#F5F5F7" padding="20px 24px">
       <mj-column>
-        <mj-text font-size="12px" color="#8B8F98" align="center">
-          © 2026. Thanks for reading.
+        <mj-text font-size="12px" color="#8B8F98" align="center" padding="0">
+          © {{static.year}}. Thanks for reading.
         </mj-text>
       </mj-column>
     </mj-section>

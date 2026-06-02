@@ -74,6 +74,11 @@ function isImageLikeFieldName(name: string): boolean {
 	return /(?:^|_)(?:image|banner|photo|thumbnail)(?:$|_)/i.test(name);
 }
 
+/** CF fields whose names indicate HTML body copy (AEM model type may still be plain "text"). */
+export function isRichTextCfFieldName(name: string): boolean {
+	return /(?:copy|body|html|richtext|description)/i.test(name);
+}
+
 function inferReferencedCfModel(fieldName: string): string | undefined {
 	if (/offer/i.test(fieldName)) return 'Offer';
 	if (/hero/i.test(fieldName)) return 'Offer';
@@ -83,6 +88,7 @@ function inferReferencedCfModel(fieldName: string): string | undefined {
 function aemFieldToTemplateType(type: string, fieldName: string): TemplateFieldDefinition['type'] {
 	const t = type.toLowerCase();
 	if (t.includes('html') || t.includes('richtext') || t === 'multiline') return 'richtext';
+	if (isRichTextCfFieldName(fieldName)) return 'richtext';
 	if (t.includes('asset')) return 'url';
 	if (t.includes('fragment') || t.includes('content-fragment')) return 'reference';
 	if (t.includes('reference') && isImageLikeFieldName(fieldName)) return 'url';
@@ -90,8 +96,11 @@ function aemFieldToTemplateType(type: string, fieldName: string): TemplateFieldD
 	return 'text';
 }
 
-function aemFieldToComponentType(type: string): ComponentModelField['component'] {
-	const templateType = aemFieldToTemplateType(type);
+function aemFieldToComponentType(
+	type: string,
+	fieldName: string
+): ComponentModelField['component'] {
+	const templateType = aemFieldToTemplateType(type, fieldName);
 	if (templateType === 'richtext') return 'richtext';
 	return 'text';
 }
@@ -152,7 +161,7 @@ export function syncTemplateFromAemModel(input: SyncTemplateFromAemInput): SyncT
 			id: modelId,
 			fields: [
 				{
-					component: aemFieldToComponentType(aemField.type),
+					component: aemFieldToComponentType(aemField.type, fieldId),
 					name: fieldId,
 					label: aemField.label || fieldId,
 					valueType: 'string',

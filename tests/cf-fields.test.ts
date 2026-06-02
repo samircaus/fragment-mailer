@@ -86,5 +86,23 @@ describe('cf-fields', () => {
 		expect(result.componentDefinition.groups[0]?.components[1]?.plugins.aem.cf.name).toBe(
 			'EmailCopy'
 		);
+		expect(result.definition.fields.emailCopy?.type).toBe('richtext');
+		expect(result.componentModels[1]?.fields[0]?.component).toBe('richtext');
+	});
+
+	it('maps emailCopy to richtext when AEM model type is plain text', () => {
+		const result = syncTemplateFromAemModel({
+			templateId: 'offer',
+			aemModel: {
+				id: 'offer-model',
+				title: 'Offer',
+				fields: [
+					{ name: 'emailCopy', label: 'Email Copy', type: 'text', required: true, multiple: false }
+				]
+			}
+		});
+
+		expect(result.definition.fields.emailCopy?.type).toBe('richtext');
+		expect(result.componentModels[0]?.fields[0]?.component).toBe('richtext');
 	});
 });

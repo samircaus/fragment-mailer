@@ -94,7 +94,13 @@ describe('summer campaign AJO transform', () => {
 		expect(result.html).not.toMatch(/\{%\s*let\s+/);
 		expect(result.html).not.toContain('<mj-raw>');
 		expect(result.html).toContain('{%#if');
-		expect(result.html).toContain('href="{{offer0.ctaLink}}"');
-		expect(result.html).toContain("result='offer0'");
+		expect(result.html).toMatch(/src="{{heroOffer\.bannerImage}}"/);
+		expect(result.html).toContain('{%#if cf.ctaLink != "" %}');
+
+		expect(result.html).toContain('{%#if offer0.bannerImage != "" %}');
+		const bareOfferIf =
+			result.html.match(/\{%#if\s+offer\d[^%]*%\}/g)?.filter((t) => !/[=<>!]/.test(t)) ?? [];
+		expect(bareOfferIf).toEqual([]);
+		expect(result.html).not.toContain('<mj-raw>');
 	});
 });

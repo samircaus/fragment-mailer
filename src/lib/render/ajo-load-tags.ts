@@ -55,19 +55,33 @@ export function stripLoadTags(template: string, loadTagRaws: string[]): string {
 }
 
 export function buildLetFragmentTag(varName: string, uuid: string, repoId: string): string {
-	return `{{fragment id='aem:${uuid}?repoId=${repoId}' result='${varName}'}}`;
+	const id = `aem:${uuid}?repoId=${repoId}`;
+	return `{{fragment id="${id}" result="${varName}"}}`;
 }
 
-/** Insert all {% let %} fragment bindings immediately after <body> so preheader tokens are in scope. */
+const PREHEADER_DIV_RE =
+	/<div\b[^>]*style="[^"]*display:\s*none[^"]*"[^>]*>/i;
+
+/** Insert AEM fragment bindings inside the preheader hidden div (AJO editor block order). */
 export function hoistLetFragmentTagsInHtml(html: string, letTags: string[]): string {
 	if (letTags.length === 0) return html;
 
 	const block = `${letTags.join('\n')}\n`;
+	const preheader = html.match(PREHEADER_DIV_RE);
+	if (preheader?.index !== undefined) {
+		const insertAt = preheader.index + preheader[0].length;
+		return `${html.slice(0, insertAt)}\n${block}${html.slice(insertAt)}`;
+	}
+
 	const bodyOpen = html.match(/<body\b[^>]*>/i);
 	if (!bodyOpen || bodyOpen.index === undefined) {
 		return `${block}${html}`;
 	}
 
 	const insertAt = bodyOpen.index + bodyOpen[0].length;
-	return `${html.slice(0, insertAt)}\n${block}${html.slice(insertAt)}`;
+	const wrapper =
+		'<div aria-hidden="true" style="display:none;max-height:0;overflow:hidden;line-height:0;mso-hide:all;font-size:0;">\n' +
+		block +
+		'</div>\n';
+	return `${html.slice(0, insertAt)}\n${wrapper}${html.slice(insertAt)}`;
 }

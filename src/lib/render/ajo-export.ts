@@ -57,14 +57,49 @@ export function stripMjRawPersonalizationWrappers(html: string): string {
 	return html.replace(/<mj-raw>\s*([\s\S]*?)\s*<\/mj-raw>/gi, '$1');
 }
 
+/**
+ * AJO `{%#if %}` conditions are PQL — bare `{%#if offer0.title %}` fails validation.
+ * @see https://experienceleague.adobe.com/docs/journey-optimizer/using/content-management/personalization/personalization-syntax.html
+ */
+export function convertBareAjoIfConditionsToPql(html: string): string {
+	return html.replace(/\{%#if\s+([^%]+?)\s*%\}/g, (full, cond: string) => {
+		const trimmed = cond.trim();
+		if (/[=<>!]/.test(trimmed)) return full;
+		return `{%#if ${trimmed} != "" %}`;
+	});
+}
+
+/** Triple mustache in src/href breaks AJO visual preview (tries to load the token as a URL). */
+export function useDoubleMustacheInUrlAttributes(html: string): string {
+	return html.replace(
+		/\b(src|href)(\s*=\s*)(["'])(\{\{\{([\s\S]*?)\}\}\})\3/gi,
+		(_full, attr: string, eq: string, quote: string, _triple: string, expr: string) =>
+			`${attr}${eq}${quote}{{${expr.trim()}}}${quote}`
+	);
+}
+
+/** Normalize legacy single-quoted fragment helpers to AJO-friendly double quotes. */
+export function normalizeAjoFragmentTagQuotes(html: string): string {
+	return html.replace(
+		/\{\{fragment\s+id='([^']+)'\s+result='([^']+)'\}\}/g,
+		'{{fragment id="$1" result="$2"}}'
+	);
+}
+
 /** Convert Liquid-style control tags to AJO Handlebars personalization syntax. */
 export function normalizeAjoPersonalizationSyntax(html: string): string {
-	return stripMjRawPersonalizationWrappers(
-		convertLiquidDefaultFilters(
-			html
-				.replace(/\{%\s*if\s+/g, '{%#if ')
-				.replace(/\{%\s*endif\s*%\}/g, '{%/if%}')
-				.replace(/\{%\s*else\s*%\}/g, '{%else%}')
+	return useDoubleMustacheInUrlAttributes(
+		normalizeAjoFragmentTagQuotes(
+			convertBareAjoIfConditionsToPql(
+				stripMjRawPersonalizationWrappers(
+					convertLiquidDefaultFilters(
+						html
+							.replace(/\{%\s*if\s+/g, '{%#if ')
+							.replace(/\{%\s*endif\s*%\}/g, '{%/if%}')
+							.replace(/\{%\s*else\s*%\}/g, '{%else%}')
+					)
+				)
+			)
 		)
 	);
 }

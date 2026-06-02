@@ -1,9 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import {
+	convertBareAjoIfConditionsToPql,
 	convertLiquidDefaultFilters,
+	normalizeAjoFragmentTagQuotes,
 	normalizeAjoPersonalizationSyntax,
 	rewriteCfRefsForAjo,
-	stripMjRawPersonalizationWrappers
+	stripMjRawPersonalizationWrappers,
+	useDoubleMustacheInUrlAttributes
 } from '../src/lib/render/ajo-export.js';
 
 describe('rewriteCfRefsForAjo', () => {
@@ -52,11 +55,45 @@ describe('stripMjRawPersonalizationWrappers', () => {
 	});
 });
 
+describe('useDoubleMustacheInUrlAttributes', () => {
+	it('downgrades triple mustache in src and href', () => {
+		const html =
+			'<img src="{{{heroOffer.bannerImage}}}" /><a href="{{{cf.ctaLink}}}">{{{cf.emailCopy}}}</a>';
+		expect(useDoubleMustacheInUrlAttributes(html)).toBe(
+			'<img src="{{heroOffer.bannerImage}}" /><a href="{{cf.ctaLink}}">{{{cf.emailCopy}}}</a>'
+		);
+	});
+});
+
+describe('normalizeAjoFragmentTagQuotes', () => {
+	it('uses double quotes on fragment helpers', () => {
+		expect(
+			normalizeAjoFragmentTagQuotes(
+				"{{fragment id='aem:uuid?repoId=host' result='cf'}}"
+			)
+		).toBe('{{fragment id="aem:uuid?repoId=host" result="cf"}}');
+	});
+});
+
+describe('convertBareAjoIfConditionsToPql', () => {
+	it('rewrites fragment field checks to PQL empty-string comparisons', () => {
+		expect(convertBareAjoIfConditionsToPql('{%#if offer0.bannerImage %}x{%/if%}')).toBe(
+			'{%#if offer0.bannerImage != "" %}x{%/if%}'
+		);
+	});
+
+	it('leaves conditions that already use PQL operators', () => {
+		expect(convertBareAjoIfConditionsToPql('{%#if profile.tier = "gold"%}')).toBe(
+			'{%#if profile.tier = "gold"%}'
+		);
+	});
+});
+
 describe('normalizeAjoPersonalizationSyntax', () => {
 	it('converts liquid if/endif to AJO handlebars control tags', () => {
 		const html = '{% if cf.bannerImage %}<img/>{% else %}<p/>{% endif %}';
 		expect(normalizeAjoPersonalizationSyntax(html)).toBe(
-			'{%#if cf.bannerImage %}<img/>{%else%}<p/>{%/if%}'
+			'{%#if cf.bannerImage != "" %}<img/>{%else%}<p/>{%/if%}'
 		);
 	});
 });

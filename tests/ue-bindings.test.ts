@@ -39,6 +39,24 @@ describe('buildUEBindings', () => {
 	});
 });
 
+describe('buildUEBindings — AEM-synced plain text type', () => {
+	it('still emits richtext for emailCopy when template field type is text', () => {
+		const bindings = buildUEBindings({
+			definition: {
+				...offerDefinition,
+				fields: {
+					emailCopy: { type: 'text', required: true, modelId: 'offer-emailcopy' }
+				}
+			},
+			discoveredBindings: ['cf.emailCopy'],
+			defaultCfPath: '/content/dam/offers/spring',
+			cfFields: {}
+		});
+
+		expect(bindings.find((b) => b.fieldPath === 'cf.emailCopy')?.fieldType).toBe('richtext');
+	});
+});
+
 describe('injectUEAttributes — richtext', () => {
 	it('emits data-aue-type="richtext" for email body', () => {
 		const html =

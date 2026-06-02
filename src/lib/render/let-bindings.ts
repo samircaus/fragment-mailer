@@ -1,6 +1,7 @@
 // {% let offer0 = cf.offers.0 %} aliases for preview UE + AJO fragment loads.
 
 import type { TemplateDefinition } from '$lib/templates/registry.js';
+import { isRichTextCfFieldName } from '$lib/templates/cf-fields.js';
 import type { UEBinding } from '$lib/render/inject-ue.js';
 
 const LET_RE = /\{%\s*let\s+([A-Za-z_]\w*)\s*=\s*([\s\S]*?)\s*%\}/g;
@@ -153,7 +154,7 @@ function fragmentRefToCfExpression(ref: string): string | null {
 }
 
 function inferLetFieldType(fieldName: string): UEBinding['fieldType'] {
-	if (/(?:body|copy|html)$/i.test(fieldName)) return 'richtext';
+	if (isRichTextCfFieldName(fieldName)) return 'richtext';
 	if (/(?:image|banner|photo|thumbnail|link|url)/i.test(fieldName)) return 'url';
 	return 'text';
 }

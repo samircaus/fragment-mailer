@@ -1,5 +1,5 @@
 import type { TemplateDefinition, TemplateFieldDefinition } from '$lib/templates/registry.js';
-import { resolveCfBinding } from '$lib/templates/cf-fields.js';
+import { isRichTextCfFieldName, resolveCfBinding } from '$lib/templates/cf-fields.js';
 import { buildLetUEBindings, parseLetFragmentAliases } from '$lib/render/let-bindings.js';
 import type { UEBinding } from '$lib/render/inject-ue.js';
 
@@ -86,13 +86,25 @@ function toUEBinding(
 	defaultCfPath: string,
 	cfFields: Record<string, unknown>
 ): UEBinding {
+	const fieldName = resolveAemPropName(fieldPath);
 	return {
 		fieldPath,
 		cfPath: resolveBindingCFPath(fieldPath, defaultCfPath, cfFields),
-		fieldName: resolveAemPropName(fieldPath),
-		fieldType: fieldDef.type,
+		fieldName,
+		fieldType: resolveUeFieldType(fieldName, fieldDef.type),
 		modelId: fieldDef.modelId
 	};
+}
+
+function resolveUeFieldType(
+	fieldName: string,
+	templateType: TemplateFieldDefinition['type']
+): UEBinding['fieldType'] {
+	if (templateType === 'richtext' || templateType === 'reference' || templateType === 'url') {
+		return templateType;
+	}
+	if (isRichTextCfFieldName(fieldName)) return 'richtext';
+	return templateType;
 }
 
 function resolveDiscoveredBinding(
@@ -102,16 +114,18 @@ function resolveDiscoveredBinding(
 	const tokenName = bindingTokenName(fieldPath);
 
 	const directField = definition.fields[tokenName];
+	const fieldName = resolveAemPropName(fieldPath);
+
 	if (directField) {
 		return {
-			fieldName: resolveAemPropName(fieldPath),
-			fieldType: directField.type,
+			fieldName,
+			fieldType: resolveUeFieldType(fieldName, directField.type),
 			modelId: directField.modelId
 		};
 	}
 
 	return {
-		fieldName: resolveAemPropName(fieldPath),
+		fieldName,
 		fieldType: inferFieldTypeFromTokenName(tokenName),
 		modelId: undefined
 	};
@@ -120,7 +134,7 @@ function resolveDiscoveredBinding(
 function inferFieldTypeFromTokenName(
 	tokenName: string
 ): UEBinding['fieldType'] {
-	if (/(?:body|copy|html)$/i.test(tokenName)) return 'richtext';
+	if (isRichTextCfFieldName(tokenName)) return 'richtext';
 	if (/(?:image|banner|photo|thumbnail)/i.test(tokenName)) return 'reference';
 	return 'text';
 }
