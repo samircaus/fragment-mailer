@@ -6,6 +6,7 @@ import type { RequestHandler } from './$types';
 import { z } from 'zod';
 import {
 	buildAjoExpressionFragmentPayload,
+	createFragment,
 	getFragment,
 	getFragmentReferences,
 	publishFragment,
@@ -14,6 +15,11 @@ import {
 import { isAjoConfigured } from '$lib/auth/ajo-token-provider.js';
 import { resolveAppEnv } from '$lib/server/app-env.js';
 import { upsertAjoFragment } from '$lib/db/ajo-fragments.js';
+import {
+	deleteAjoFragmentDraft,
+	getAjoFragmentDraft,
+	upsertAjoFragmentDraft
+} from '$lib/db/ajo-fragment-drafts.js';
 import { getDb } from '$lib/db/email-status.js';
 
 function ajoErrorDetail(raw: string, fallback: string): string {
@@ -32,6 +38,25 @@ function ajoErrorDetail(raw: string, fallback: string): string {
 
 export const GET: RequestHandler = async ({ params, platform }) => {
 	try {
+		const db = getDb(platform);
+		const localDraft = await getAjoFragmentDraft(db, params.id);
+		if (localDraft) {
+			return json({
+				fragment: {
+					id: localDraft.id,
+					name: localDraft.name,
+					description: localDraft.description || undefined,
+					type: 'expression',
+					status: 'DRAFT',
+					channels: ['shared'],
+					subType: localDraft.subType,
+					fragment: { expression: localDraft.expression }
+				},
+				references: { count: 0, items: [] },
+				isLocalDraft: true
+			});
+		}
+
 		const env = resolveAppEnv(platform?.env);
 		if (!isAjoConfigured(env)) {
 			throw error(503, 'AJO credentials not configured');
@@ -56,14 +81,14 @@ export const GET: RequestHandler = async ({ params, platform }) => {
 		}
 
 		// Auto-register in local DB so it appears in the "managed here" list.
-		const db = getDb(platform);
 		await upsertAjoFragment(db, { id: params.id, name: fragmentResult.data.name }).catch(
 			() => undefined
 		);
 
 		return json({
 			fragment: fragmentResult.data,
-			references: referencesResult.data ?? { count: 0, items: [] }
+			references: referencesResult.data ?? { count: 0, items: [] },
+			isLocalDraft: false
 		});
 	} catch (e) {
 		if (e && typeof e === 'object' && 'status' in e) throw e;
@@ -80,19 +105,15 @@ export const GET: RequestHandler = async ({ params, platform }) => {
 
 const UpdateSchema = z.object({
 	expression: z.string(),
-	name: z.string().min(1).optional(),
-	description: z.string().optional(),
+	name: z.string().trim().min(1).max(120).optional(),
+	description: z.string().trim().max(600).optional(),
 	subType: z.enum(['TEXT', 'HTML', 'JSON']).optional(),
 	etag: z.string().optional(),
-	publish: z.boolean().optional()
+	publish: z.boolean().optional(),
+	syncToAjo: z.boolean().optional()
 });
 
 export const PUT: RequestHandler = async ({ params, request, platform }) => {
-	const env = resolveAppEnv(platform?.env);
-	if (!isAjoConfigured(env)) {
-		throw error(503, 'AJO credentials not configured');
-	}
-
 	let body: unknown;
 	try {
 		body = await request.json();
@@ -102,6 +123,65 @@ export const PUT: RequestHandler = async ({ params, request, platform }) => {
 
 	const parsed = UpdateSchema.safeParse(body);
 	if (!parsed.success) throw error(400, `Invalid request: ${parsed.error.message}`);
+
+	const db = getDb(platform);
+	const localDraft = await getAjoFragmentDraft(db, params.id);
+	if (localDraft) {
+		if (!parsed.data.syncToAjo) {
+			await upsertAjoFragmentDraft(db, {
+				id: params.id,
+				name: parsed.data.name ?? localDraft.name,
+				description: parsed.data.description ?? localDraft.description,
+				expression: parsed.data.expression,
+				subType: parsed.data.subType ?? localDraft.subType
+			});
+			return json({ ok: true, savedLocal: true, published: false });
+		}
+
+		const env = resolveAppEnv(platform?.env);
+		if (!isAjoConfigured(env)) {
+			throw error(503, 'AJO credentials not configured');
+		}
+
+		const payload = buildAjoExpressionFragmentPayload({
+			name: parsed.data.name ?? localDraft.name,
+			description: parsed.data.description ?? localDraft.description,
+			expression: parsed.data.expression,
+			subType: parsed.data.subType ?? localDraft.subType
+		});
+		const created = await createFragment(payload, env);
+		if (created.error || !created.data) {
+			const status = created.status && created.status >= 400 ? created.status : 502;
+			throw error(status, created.error ?? 'Failed to create fragment in AJO');
+		}
+
+		let published = false;
+		if (parsed.data.publish !== false) {
+			const publishResult = await publishFragment(created.data.id, env);
+			if (publishResult.error) {
+				const status = publishResult.status && publishResult.status >= 400 ? publishResult.status : 502;
+				throw error(status, publishResult.error);
+			}
+			published = true;
+		}
+
+		await upsertAjoFragment(db, {
+			id: created.data.id,
+			name: created.data.name
+		}).catch(() => undefined);
+		await deleteAjoFragmentDraft(db, params.id).catch(() => undefined);
+
+		return json({
+			ok: true,
+			published,
+			newFragmentId: created.data.id
+		});
+	}
+
+	const env = resolveAppEnv(platform?.env);
+	if (!isAjoConfigured(env)) {
+		throw error(503, 'AJO credentials not configured');
+	}
 
 	const existing = await getFragment(params.id, env);
 	if (existing.error || !existing.data) {
@@ -134,7 +214,6 @@ export const PUT: RequestHandler = async ({ params, request, platform }) => {
 	}
 
 	const savedName = parsed.data.name ?? existing.data.name;
-	const db = getDb(platform);
 	await upsertAjoFragment(db, { id: params.id, name: savedName }).catch(() => undefined);
 
 	return json({ ok: true, published });

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/stores';
+	import { goto } from '$app/navigation';
 	import type { AjoExpressionFragmentDetail, AjoFragmentReferences } from '$lib/ajo/fragment-types.js';
 
 	const fragmentId = $derived($page.params.id ?? '');
@@ -13,6 +14,7 @@
 	let loadError = $state('');
 	let saveError = $state('');
 	let saveSuccess = $state('');
+	let isLocalDraft = $state(false);
 
 	const expressionPlaceholder = '© {{profile.system.year}} Acme Corp…';
 
@@ -45,9 +47,14 @@
 			const data = (await res.json()) as {
 				fragment: AjoExpressionFragmentDetail;
 				references: AjoFragmentReferences;
+				isLocalDraft?: boolean;
 			};
-			fragment = data.fragment;
+			fragment = {
+				...data.fragment,
+				description: data.fragment.description ?? ''
+			};
 			references = data.references ?? { count: 0, items: [] };
+			isLocalDraft = Boolean(data.isLocalDraft);
 			expression = data.fragment.fragment?.expression ?? '';
 			etag = data.fragment.etag;
 		} catch (err) {
@@ -59,6 +66,12 @@
 
 	async function saveFragment() {
 		if (!fragment) return;
+		const name = fragment.name.trim();
+		if (!name) {
+			saveError = 'Name is required.';
+			return;
+		}
+		fragment.name = name;
 		isSaving = true;
 		saveError = '';
 		saveSuccess = '';
@@ -72,7 +85,8 @@
 					description: fragment.description,
 					subType: fragment.subType ?? 'HTML',
 					etag,
-					publish: true
+					publish: !isLocalDraft,
+					syncToAjo: false
 				})
 			});
 			if (!res.ok) {
@@ -85,10 +99,56 @@
 				}
 				throw new Error(detail || `Save failed (${res.status})`);
 			}
-			saveSuccess = 'Saved and published to AJO.';
+			saveSuccess = isLocalDraft ? 'Draft saved locally.' : 'Saved and published to AJO.';
 			await loadFragment(fragmentId);
 		} catch (err) {
 			saveError = err instanceof Error ? err.message : 'Save failed';
+		} finally {
+			isSaving = false;
+		}
+	}
+
+	async function syncToAjo() {
+		if (!fragment || !isLocalDraft) return;
+		const name = fragment.name.trim();
+		if (!name) {
+			saveError = 'Name is required before syncing to AJO.';
+			return;
+		}
+		fragment.name = name;
+		isSaving = true;
+		saveError = '';
+		saveSuccess = '';
+		try {
+			const res = await fetch(`/api/ajo/fragments/${encodeURIComponent(fragmentId)}`, {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					expression,
+					name: fragment.name,
+					description: fragment.description,
+					subType: fragment.subType ?? 'HTML',
+					publish: true,
+					syncToAjo: true
+				})
+			});
+			if (!res.ok) {
+				let detail = '';
+				try {
+					const body = (await res.json()) as { message?: string };
+					detail = body.message ?? '';
+				} catch {
+					// ignore
+				}
+				throw new Error(detail || `Sync failed (${res.status})`);
+			}
+			const data = (await res.json()) as { newFragmentId?: string };
+			if (!data.newFragmentId) {
+				throw new Error('AJO did not return a new fragment ID');
+			}
+			await goto(`/fragments/${encodeURIComponent(data.newFragmentId)}`);
+		} catch (err) {
+			saveError = err instanceof Error ? err.message : 'Sync failed';
 		} finally {
 			isSaving = false;
 		}
@@ -132,22 +192,27 @@
 			<p class="status-message error">{loadError}</p>
 		{:else if fragment}
 			<div class="editor-header">
-				<div>
-					<h1>{fragment.name}</h1>
-					<div class="meta">
-						<span class="status-chip status-{fragment.status.toLowerCase()}">{statusLabel(fragment.status)}</span>
-						<span class="meta-item">{fragment.type} · {fragment.subType ?? 'HTML'}</span>
+				<div class="meta">
+					<span class="status-chip status-{fragment.status.toLowerCase()}">{statusLabel(fragment.status)}</span>
+					<span class="meta-item">{fragment.type} · {fragment.subType ?? 'HTML'}</span>
+					{#if isLocalDraft}
+						<span class="meta-item usage">Not synced to AJO yet</span>
+					{:else}
 						<span class="meta-item usage" title="Campaigns and journeys referencing this fragment">
 							Used by {references.count} campaign{references.count === 1 ? '' : 's'}
 						</span>
-					</div>
-					{#if fragment.description}
-						<p class="description">{fragment.description}</p>
 					{/if}
 				</div>
-				<button type="button" class="save-btn" onclick={() => saveFragment()} disabled={isSaving}>
-					{isSaving ? 'Saving…' : 'Save & publish'}
-				</button>
+				<div class="header-actions">
+					<button type="button" class="save-btn save-secondary" onclick={() => saveFragment()} disabled={isSaving}>
+						{isSaving ? 'Saving…' : isLocalDraft ? 'Save draft' : 'Save & publish'}
+					</button>
+					{#if isLocalDraft}
+						<button type="button" class="save-btn" onclick={() => syncToAjo()} disabled={isSaving}>
+							{isSaving ? 'Syncing…' : 'Sync to AJO'}
+						</button>
+					{/if}
+				</div>
 			</div>
 
 			{#if saveError}
@@ -155,6 +220,30 @@
 			{:else if saveSuccess}
 				<p class="banner success">{saveSuccess}</p>
 			{/if}
+
+			<div class="editor-panel details-panel">
+				<div class="field">
+					<label class="editor-label" for="fragment-name">Name</label>
+					<input
+						id="fragment-name"
+						type="text"
+						bind:value={fragment.name}
+						maxlength="120"
+						placeholder="Fragment name"
+					/>
+				</div>
+				<div class="field">
+					<label class="editor-label" for="fragment-description">Description</label>
+					<textarea
+						id="fragment-description"
+						class="description-input"
+						bind:value={fragment.description}
+						maxlength="600"
+						rows="2"
+						placeholder="What this fragment is for"
+					></textarea>
+				</div>
+			</div>
 
 			<div class="editor-panel">
 				<label class="editor-label" for="fragment-expression">Expression (Handlebars)</label>
@@ -171,7 +260,7 @@
 				</p>
 			</div>
 
-			{#if references.items.length > 0}
+			{#if !isLocalDraft && references.items.length > 0}
 				<section class="references">
 					<h2>References</h2>
 					<ul>
@@ -270,18 +359,10 @@
 
 	.editor-header {
 		display: flex;
-		align-items: flex-start;
+		align-items: center;
 		justify-content: space-between;
 		gap: 16px;
-		margin-bottom: 20px;
-	}
-
-	h1 {
-		font-size: 20px;
-		font-weight: 600;
-		color: #111;
-		margin-bottom: 8px;
-		letter-spacing: -0.3px;
+		margin-bottom: 16px;
 	}
 
 	.meta {
@@ -319,11 +400,31 @@
 		color: #15803d;
 	}
 
-	.description {
-		margin-top: 8px;
+	.details-panel {
+		margin-bottom: 12px;
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+	}
+
+	.details-panel .field input,
+	.details-panel .description-input {
+		width: 100%;
+		font: inherit;
 		font-size: 13px;
-		color: #71717a;
-		line-height: 1.5;
+		padding: 8px 10px;
+		border: 1px solid #e4e4e7;
+		border-radius: 8px;
+		background: #fff;
+		color: #111;
+		resize: vertical;
+	}
+
+	.details-panel .field input:focus,
+	.details-panel .description-input:focus {
+		outline: none;
+		border-color: #5b5bd6;
+		box-shadow: 0 0 0 3px rgba(91, 91, 214, 0.1);
 	}
 
 	.save-btn {
@@ -337,6 +438,22 @@
 		color: #fff;
 		cursor: pointer;
 		flex-shrink: 0;
+	}
+
+	.header-actions {
+		display: flex;
+		gap: 8px;
+		flex-shrink: 0;
+	}
+
+	.save-secondary {
+		background: #fff;
+		border: 1px solid #d4d4d8;
+		color: #3f3f46;
+	}
+
+	.save-secondary:hover:not(:disabled) {
+		background: #fafafa;
 	}
 
 	.save-btn:hover:not(:disabled) {

@@ -128,9 +128,6 @@
 		<div class="section-header">
 			<div>
 				<h2>AJO Content Templates</h2>
-				<p class="section-desc">
-					Pure MJML templates — no AEM content fragments. Edit here, then push to AJO.
-				</p>
 			</div>
 			<button
 				type="button"
@@ -173,7 +170,7 @@
 		{:else if loadError}
 			<p class="status-message error">{loadError}</p>
 		{:else if standaloneTemplates.length === 0}
-			<p class="status-message">No templates yet. Create one above.</p>
+			<p class="status-message"></p>
 		{:else}
 			<div class="card-grid">
 				{#each standaloneTemplates as template (template.id)}

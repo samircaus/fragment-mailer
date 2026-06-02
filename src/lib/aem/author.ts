@@ -8,6 +8,7 @@ import { authorFragmentToCFFragment, authorFragmentToListItem } from './author-m
 import type { AEMClientOptions } from './client.js';
 import { authorFragmentQueryParams, AUTHOR_CF_REFERENCES } from './reference-fetch.js';
 import type { AppEnv } from './env.js';
+import { campaignBasenameMatchesSlug, campaignSlugFromPath } from '$lib/campaigns/resolve-path.js';
 import type { CFFragment, ContentFragmentItem } from './types.js';
 
 export { authorFragmentToCFFragment, authorFragmentToListItem } from './author-map.js';
@@ -100,10 +101,18 @@ export async function fetchAuthorFragmentRawByPath(
 
 	const body: unknown = await res.json();
 	const items = extractAuthorList(body as AuthorFragmentList | AuthorFragment[]);
-	const match =
-		(body && typeof body === 'object' && 'id' in body && 'path' in body && !('items' in body)
+	const single =
+		body && typeof body === 'object' && 'id' in body && 'path' in body && !('items' in body)
 			? (body as AuthorFragment)
-			: undefined) ?? items.find((f) => f.path === path) ?? items[0];
+			: undefined;
+	const slug = campaignSlugFromPath(path);
+	const match =
+		single ??
+		items.find((f) => f.path === path) ??
+		items.find((f) => campaignSlugFromPath(f.path) === slug) ??
+		(items.filter((f) => campaignBasenameMatchesSlug(campaignSlugFromPath(f.path), slug)).length === 1
+			? items.find((f) => campaignBasenameMatchesSlug(campaignSlugFromPath(f.path), slug))
+			: undefined);
 
 	if (!match?.id) {
 		return { error: `No CF found at path: ${path}` };

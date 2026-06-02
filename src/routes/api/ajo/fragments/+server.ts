@@ -8,12 +8,31 @@ import { listFragments } from '$lib/ajo/fragments-client.js';
 import { isAjoConfigured } from '$lib/auth/ajo-token-provider.js';
 import { resolveAppEnv } from '$lib/server/app-env.js';
 import { listAjoFragments } from '$lib/db/ajo-fragments.js';
+import { listAjoFragmentDrafts, upsertAjoFragmentDraft } from '$lib/db/ajo-fragment-drafts.js';
 import { getDb } from '$lib/db/email-status.js';
+import { z } from 'zod';
 
 export const GET: RequestHandler = async ({ url, platform }) => {
 	if (url.searchParams.get('source') === 'local') {
 		const db = getDb(platform);
-		const fragments = await listAjoFragments(db);
+		const [trackedFragments, draftFragments] = await Promise.all([
+			listAjoFragments(db),
+			listAjoFragmentDrafts(db)
+		]);
+		const fragments = [
+			...draftFragments.map((draft) => ({
+				id: draft.id,
+				name: draft.name,
+				updatedAt: draft.updatedAt,
+				source: 'draft' as const
+			})),
+			...trackedFragments.map((fragment) => ({
+				id: fragment.id,
+				name: fragment.name,
+				updatedAt: fragment.updatedAt,
+				source: 'ajo' as const
+			}))
+		].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 		return json({ fragments });
 	}
 
@@ -32,4 +51,37 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 	}
 
 	return json({ fragments: result.data?.items ?? [] });
+};
+
+const CreateLocalDraftSchema = z.object({
+	name: z.string().trim().min(1).max(120),
+	description: z.string().trim().max(600).optional(),
+	expression: z.string().optional(),
+	subType: z.enum(['TEXT', 'HTML', 'JSON']).optional()
+});
+
+export const POST: RequestHandler = async ({ request, platform }) => {
+	let body: unknown;
+	try {
+		body = await request.json();
+	} catch {
+		throw error(400, 'Invalid JSON body');
+	}
+
+	const parsed = CreateLocalDraftSchema.safeParse(body);
+	if (!parsed.success) {
+		throw error(400, `Invalid request: ${parsed.error.message}`);
+	}
+
+	const id = `local-${crypto.randomUUID()}`;
+	const db = getDb(platform);
+	await upsertAjoFragmentDraft(db, {
+		id,
+		name: parsed.data.name,
+		description: parsed.data.description ?? '',
+		expression: parsed.data.expression ?? '',
+		subType: parsed.data.subType ?? 'HTML'
+	});
+
+	return json({ ok: true, id });
 };

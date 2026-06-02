@@ -1,4 +1,5 @@
 import { fetchCampaignFragmentAtPath, fetchCampaignFragmentById, listCampaignFragments } from '$lib/aem/delivery.js';
+import { resolveCampaignPathFromList } from '$lib/campaigns/resolve-path.js';
 import { resolveAuthorModel } from '$lib/aem/author.js';
 import { normalizeCfModelPath } from '$lib/aem/cf-model-scope.js';
 import { aemClientOptions, authorHostUrl, campaignsFolder, type AppEnv } from '$lib/aem/env.js';
@@ -39,10 +40,7 @@ export async function getCampaignWithCF(
 	id: string,
 	env?: AppEnv
 ): Promise<Result<{ campaign: Campaign; cf: ReturnType<typeof normalizeCF> }>> {
-	const fragmentResult = UUID_RE.test(id)
-		? await fetchCampaignFragmentById(id, env)
-		: await fetchCampaignFragmentAtPath(resolveCampaignPath(id, env), env);
-
+	const fragmentResult = await fetchCampaignFragmentForId(id, env);
 	if (fragmentResult.error || !fragmentResult.data) return fragmentResult;
 
 	const hydrated = await hydrateUnresolvedFragmentReferences(fragmentResult.data, env);
@@ -55,10 +53,7 @@ export async function getCampaignContentModel(
 	env?: AppEnv,
 	templateDefinition?: TemplateDefinition
 ): Promise<Result<CampaignContentModel>> {
-	const fragmentResult = UUID_RE.test(id)
-		? await fetchCampaignFragmentById(id, env)
-		: await fetchCampaignFragmentAtPath(resolveCampaignPath(id, env), env);
-
+	const fragmentResult = await fetchCampaignFragmentForId(id, env);
 	if (fragmentResult.error || !fragmentResult.data) return fragmentResult;
 
 	const hydrated = await hydrateUnresolvedFragmentReferences(fragmentResult.data, env);
@@ -137,6 +132,39 @@ function resolveCampaignPath(id: string, env?: AppEnv): string {
 	if (id.startsWith('/content/')) return id;
 	const folder = campaignsFolder(env);
 	return `${folder}/${id}`;
+}
+
+function isCampaignNotFoundError(message: string | undefined): boolean {
+	return Boolean(message?.includes('No CF found at path:'));
+}
+
+async function fetchCampaignFragmentForId(
+	id: string,
+	env?: AppEnv
+): Promise<Result<CFFragment>> {
+	if (UUID_RE.test(id)) {
+		return fetchCampaignFragmentById(id, env);
+	}
+
+	const path = resolveCampaignPath(id, env);
+	let result = await fetchCampaignFragmentAtPath(path, env);
+	if (result.data || !isCampaignNotFoundError(result.error) || id.startsWith('/content/')) {
+		return result;
+	}
+
+	const resolved = await resolveCampaignPathBySlug(id, env);
+	if (!resolved || resolved === path) {
+		return result;
+	}
+
+	result = await fetchCampaignFragmentAtPath(resolved, env);
+	return result;
+}
+
+async function resolveCampaignPathBySlug(id: string, env?: AppEnv): Promise<string | null> {
+	const listResult = await listCampaignFragments(env);
+	if (!listResult.data) return null;
+	return resolveCampaignPathFromList(id, campaignsFolder(env), listResult.data);
 }
 
 function itemToSummary(item: ContentFragmentItem): CampaignSummary {

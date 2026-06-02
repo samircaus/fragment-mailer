@@ -1,11 +1,13 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
 	import type { AjoFragmentListItem } from '$lib/ajo/fragment-types.js';
 
 	interface LocalFragment {
 		id: string;
 		name: string;
 		updatedAt: string;
+		source: 'draft' | 'ajo';
 	}
 
 	let localFragments = $state<LocalFragment[]>([]);
@@ -16,6 +18,10 @@
 	let allFragments = $state<AjoFragmentListItem[]>([]);
 	let isBrowseLoading = $state(false);
 	let browseError = $state('');
+	let isCreating = $state(false);
+	let createName = $state('');
+	let createDescription = $state('');
+	let createError = $state('');
 
 	onMount(() => {
 		void loadLocalFragments();
@@ -74,6 +80,43 @@
 		}
 	}
 
+	async function createLocalFragment() {
+		const name = createName.trim();
+		if (!name) {
+			createError = 'Name is required.';
+			return;
+		}
+
+		isCreating = true;
+		createError = '';
+		try {
+			const res = await fetch('/api/ajo/fragments', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					name,
+					description: createDescription.trim()
+				})
+			});
+			if (!res.ok) {
+				let detail = '';
+				try {
+					const body = (await res.json()) as { message?: string };
+					detail = body.message ?? '';
+				} catch {
+					// ignore
+				}
+				throw new Error(detail || `Failed to create fragment (${res.status})`);
+			}
+			const data = (await res.json()) as { id: string };
+			await goto(`/fragments/${encodeURIComponent(data.id)}`);
+		} catch (err) {
+			createError = err instanceof Error ? err.message : 'Failed to create fragment';
+		} finally {
+			isCreating = false;
+		}
+	}
+
 	function statusLabel(status: string): string {
 		switch (status) {
 			case 'PUBLISHED':
@@ -114,20 +157,56 @@
 		<div class="section-header">
 			<div>
 				<h2>AJO Fragments</h2>
-				<p class="section-desc">
-					Expression fragments managed through this tool. Open a fragment from AJO below to start
-					tracking it here.
-				</p>
+				<p class="section-desc">Create local drafts, then sync them to AJO when ready.</p>
 			</div>
-			<button
-				type="button"
-				class="refresh-btn"
-				onclick={() => loadLocalFragments()}
-				disabled={isLoading}
-			>
-				Refresh
-			</button>
+			<div class="header-actions">
+				<button
+					type="button"
+					class="refresh-btn"
+					onclick={() => loadLocalFragments()}
+					disabled={isLoading}
+				>
+					Refresh
+				</button>
+			</div>
 		</div>
+
+		<form class="create-card" onsubmit={(e) => (e.preventDefault(), createLocalFragment())}>
+			<h3 class="create-title">New fragment</h3>
+			<div class="create-fields">
+				<div class="field">
+					<label for="new-fragment-name">Name</label>
+					<input
+						id="new-fragment-name"
+						type="text"
+						bind:value={createName}
+						placeholder="Footer legal copy"
+						maxlength="120"
+						required
+						disabled={isCreating}
+					/>
+				</div>
+				<div class="field">
+					<label for="new-fragment-description">Description</label>
+					<textarea
+						id="new-fragment-description"
+						bind:value={createDescription}
+						placeholder="What this fragment is for"
+						maxlength="600"
+						rows="2"
+						disabled={isCreating}
+					></textarea>
+				</div>
+			</div>
+			<div class="create-actions">
+				<button type="submit" class="create-btn" disabled={isCreating}>
+					{isCreating ? 'Creating…' : 'Create fragment'}
+				</button>
+				{#if createError}
+					<p class="create-error">{createError}</p>
+				{/if}
+			</div>
+		</form>
 
 		{#if isLoading}
 			<p class="status-message">Loading…</p>
@@ -151,6 +230,9 @@
 							<tr>
 								<td class="name-cell">
 									<a href="/fragments/{fragment.id}" class="row-link">{fragment.name}</a>
+									{#if fragment.source === 'draft'}
+										<span class="draft-chip">local draft</span>
+									{/if}
 								</td>
 								<td class="mono-cell" title={fragment.id}>{fragment.id}</td>
 								<td class="date-cell">{formatDate(fragment.updatedAt)}</td>
@@ -327,6 +409,12 @@
 		max-width: 560px;
 	}
 
+	.header-actions {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+
 	.refresh-btn {
 		font: inherit;
 		font-size: 12px;
@@ -348,6 +436,82 @@
 	.refresh-btn:disabled {
 		opacity: 0.6;
 		cursor: not-allowed;
+	}
+
+	.create-card {
+		background: #fff;
+		border: 1px solid #e4e4e7;
+		border-radius: 10px;
+		padding: 14px;
+		margin-bottom: 18px;
+	}
+
+	.create-title {
+		font-size: 13px;
+		font-weight: 600;
+		color: #111;
+		margin-bottom: 12px;
+	}
+
+	.create-fields {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+	}
+
+	.field label {
+		display: block;
+		font-size: 11px;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.4px;
+		color: #71717a;
+		margin-bottom: 6px;
+	}
+
+	.field input,
+	.field textarea {
+		width: 100%;
+		font: inherit;
+		font-size: 13px;
+		padding: 8px 10px;
+		border: 1px solid #e4e4e7;
+		border-radius: 8px;
+		background: #fff;
+		resize: vertical;
+	}
+
+	.create-actions {
+		margin-top: 10px;
+		display: flex;
+		align-items: center;
+		gap: 12px;
+	}
+
+	.create-btn {
+		font: inherit;
+		font-size: 12px;
+		font-weight: 600;
+		padding: 7px 12px;
+		border: none;
+		border-radius: 6px;
+		background: #5b5bd6;
+		color: #fff;
+		cursor: pointer;
+	}
+
+	.create-btn:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+	}
+
+	.create-btn:hover:not(:disabled) {
+		background: #4f4fc4;
+	}
+
+	.create-error {
+		font-size: 12px;
+		color: #b91c1c;
 	}
 
 	.status-message {
@@ -413,6 +577,19 @@
 		color: #71717a;
 		margin-top: 4px;
 		line-height: 1.4;
+	}
+
+	.draft-chip {
+		display: inline-block;
+		margin-left: 8px;
+		font-size: 10px;
+		font-weight: 600;
+		color: #5b5bd6;
+		background: #ededfc;
+		padding: 2px 6px;
+		border-radius: 999px;
+		text-transform: uppercase;
+		letter-spacing: 0.3px;
 	}
 
 	.status-chip {

@@ -305,6 +305,28 @@ export async function updateFragment(
 	return { data: { updated: true } };
 }
 
+export async function createFragment(
+	payload: AjoExpressionFragmentPayload,
+	env: AppEnv
+): Promise<Result<AjoExpressionFragmentDetail>> {
+	const client = await buildClientOptions(env);
+	if (client.error || !client.data) return { error: client.error!, status: client.status };
+
+	const result = await requestJson<Record<string, unknown>>(
+		'POST',
+		FRAGMENTS_PATH,
+		client.data,
+		env,
+		{
+			accept: AJO_FRAGMENT_CONTENT_TYPE,
+			contentType: AJO_FRAGMENT_CONTENT_TYPE,
+			body: payload
+		}
+	);
+	if (result.error || !result.data) return result as Result<AjoExpressionFragmentDetail>;
+	return { data: mapFragmentDetail(result.data) };
+}
+
 export async function publishFragment(
 	fragmentId: string,
 	env: AppEnv
