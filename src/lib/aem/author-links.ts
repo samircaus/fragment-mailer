@@ -3,6 +3,9 @@
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DEFAULT_EXP_TENANT = 'psc';
 
+/** AJO content template ids from the Platform API (path segment safe). */
+const AJO_TEMPLATE_ID_RE = /^[^/?#\s]+$/;
+
 /** Hostname (and port) for UE canvas paths — no protocol. */
 export function appCanvasHost(originOrHost: string): string {
 	const trimmed = originOrHost.trim();
@@ -43,6 +46,29 @@ export function cfExperienceCloudEditorUrl(
 	const tenant = tenantSlug.trim() || DEFAULT_EXP_TENANT;
 
 	return `https://experience.adobe.com/?repo=${encodeURIComponent(repo)}#/@${encodeURIComponent(tenant)}/aem/cf/editor/editor/${encodeURIComponent(uuid)}`;
+}
+
+/**
+ * AJO Journey Optimizer email content template in Experience Cloud.
+ * Example:
+ *   https://experience.adobe.com/?repo=author-p125048-e1847106.adobeaemcloud.com#/@psc/sname:prod/journey-optimizer/content-templates/details/{id}/email
+ */
+export function ajoExperienceCloudTemplateUrl(
+	templateId: string,
+	authorBaseUrl: string | null | undefined,
+	tenantSlug: string = DEFAULT_EXP_TENANT,
+	sandboxName: string = 'prod'
+): string | null {
+	if (!templateId?.trim() || !authorBaseUrl?.trim()) return null;
+
+	const id = templateId.trim();
+	if (!AJO_TEMPLATE_ID_RE.test(id)) return null;
+
+	const repo = authorRepoHost(authorBaseUrl);
+	const tenant = tenantSlug.trim() || DEFAULT_EXP_TENANT;
+	const sandbox = sandboxName.trim() || 'prod';
+
+	return `https://experience.adobe.com/?repo=${encodeURIComponent(repo)}#/@${encodeURIComponent(tenant)}/sname:${encodeURIComponent(sandbox)}/journey-optimizer/content-templates/details/${encodeURIComponent(id)}/email`;
 }
 
 /**

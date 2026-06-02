@@ -1,5 +1,5 @@
 import type { LayoutServerLoad } from './$types';
-import { authorHostUrl, cfEditorTenant } from '$lib/aem/env.js';
+import { ajoSandboxName, authorHostUrl, cfEditorTenant } from '$lib/aem/env.js';
 import { resolveAppEnv } from '$lib/server/app-env.js';
 
 export const load: LayoutServerLoad = async ({ platform, url }) => {
@@ -14,6 +14,7 @@ export const load: LayoutServerLoad = async ({ platform, url }) => {
 		aem: {
 			authorUrl,
 			cfEditorTenant: cfEditorTenant(env),
+			ajoSandboxName: ajoSandboxName(env),
 			campaignsPath: env?.AEM_CAMPAIGNS_PATH?.trim() || '/content/dam/email/en/campaigns'
 		}
 	};

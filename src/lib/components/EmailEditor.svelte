@@ -1,7 +1,11 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import { onMount, tick } from 'svelte';
-	import { cfExperienceCloudEditorUrl, universalEditorCanvasUrl } from '$lib/aem/author-links.js';
+	import {
+		ajoExperienceCloudTemplateUrl,
+		cfExperienceCloudEditorUrl,
+		universalEditorCanvasUrl
+	} from '$lib/aem/author-links.js';
 	import { type Persona } from '$lib/personas/samples.js';
 	import type { PersonaListItem } from '$lib/personas/types.js';
 	import PreviewProfilesManager from '$lib/components/PreviewProfilesManager.svelte';
@@ -1168,6 +1172,7 @@
 
 	const aemAuthorUrl = $derived($page.data?.aem?.authorUrl ?? $page.data?.ue?.aemBaseUrl ?? null);
 	const cfEditorTenant = $derived($page.data?.aem?.cfEditorTenant ?? 'psc');
+	const ajoSandbox = $derived($page.data?.aem?.ajoSandboxName ?? 'prod');
 
 	const cfAuthorUrl = $derived.by(() => {
 		if (isStandalone || !campaign?.cfUuid) return null;
@@ -1177,6 +1182,12 @@
 	const ueCanvasUrl = $derived.by(() => {
 		if (isStandalone || !campaignId || !aemAuthorUrl) return null;
 		return universalEditorCanvasUrl(campaignId, $page.url.origin, aemAuthorUrl, cfEditorTenant);
+	});
+
+	const ajoTemplateUrl = $derived.by(() => {
+		const remoteId = remoteTemplateId();
+		if (!remoteId || !aemAuthorUrl) return null;
+		return ajoExperienceCloudTemplateUrl(remoteId, aemAuthorUrl, cfEditorTenant, ajoSandbox);
 	});
 
 	const editorTitle = $derived(
@@ -1408,6 +1419,26 @@
 				</button>
 			</div>
 			<div class="ajo-push-group">
+				{#if ajoTemplateUrl}
+					<a
+						href={ajoTemplateUrl}
+						target="_blank"
+						rel="noopener noreferrer"
+						class="open-cf-link"
+						title="Open this email content template in Journey Optimizer (Experience Cloud)"
+					>
+						<svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+							<path
+								d="M9 2h3v3M12 2 7 7M5 2H3a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V9"
+								stroke="currentColor"
+								stroke-width="1.25"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+							/>
+						</svg>
+						Open in AJO
+					</a>
+				{/if}
 				<span
 					class="sync-chip sync-{ajoSyncStatus.replace('_', '-')}"
 					title={ajoSyncChipTitle}

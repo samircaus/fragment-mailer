@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+	ajoExperienceCloudTemplateUrl,
 	authorRepoHost,
 	appCanvasHost,
 	cfExperienceCloudBrowseUrl,
@@ -28,6 +29,22 @@ describe('cfExperienceCloudBrowseUrl', () => {
 	it('returns null without folder path or author host', () => {
 		expect(cfExperienceCloudBrowseUrl('', AUTHOR)).toBeNull();
 		expect(cfExperienceCloudBrowseUrl('/content/dam/foo', '')).toBeNull();
+	});
+});
+
+describe('ajoExperienceCloudTemplateUrl', () => {
+	const TEMPLATE_ID = 'c30777cd-6e3c-496f-bbe1-79e781350b8d';
+
+	it('builds Experience Cloud AJO content template link', () => {
+		expect(ajoExperienceCloudTemplateUrl(TEMPLATE_ID, AUTHOR, 'psc', 'prod')).toBe(
+			'https://experience.adobe.com/?repo=author-p125048-e1847106.adobeaemcloud.com#/@psc/sname:prod/journey-optimizer/content-templates/details/c30777cd-6e3c-496f-bbe1-79e781350b8d/email'
+		);
+	});
+
+	it('returns null without template id or author host', () => {
+		expect(ajoExperienceCloudTemplateUrl('', AUTHOR)).toBeNull();
+		expect(ajoExperienceCloudTemplateUrl(TEMPLATE_ID, '')).toBeNull();
+		expect(ajoExperienceCloudTemplateUrl('bad/id', AUTHOR)).toBeNull();
 	});
 });
 
