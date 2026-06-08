@@ -7,6 +7,11 @@ import { applyPreviewFragments } from '$lib/fragments/preview.js';
 import { resolve } from '$lib/render/resolve.js';
 import { compileMJML } from '$lib/render/mjml.js';
 import { wrapAjoControlTagsForMjml } from '$lib/render/ajo-export.js';
+import {
+	isMjmlFragmentSource,
+	wrapFragmentHtmlForPreview,
+	wrapFragmentMjmlForCompile
+} from '$lib/mjml/fragment-mjml.js';
 import { flattenPersona, resolvePreviewPersona } from '$lib/personas/validate.js';
 import { resolveAppEnv } from '$lib/server/app-env.js';
 
@@ -46,7 +51,18 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 
 	const mjmlWithFragments = await applyPreviewFragments(mjml, env);
 	const { html: resolvedMJML, warnings } = resolve(mjmlWithFragments, context);
-	const compileResult = await compileMJML(wrapAjoControlTagsForMjml(resolvedMJML), { beautify: true });
+
+	if (!isMjmlFragmentSource(resolvedMJML)) {
+		return json({
+			html: wrapFragmentHtmlForPreview(resolvedMJML),
+			warnings
+		});
+	}
+
+	const compileResult = await compileMJML(
+		wrapAjoControlTagsForMjml(wrapFragmentMjmlForCompile(resolvedMJML)),
+		{ beautify: true }
+	);
 
 	if (!compileResult.html) {
 		return json(

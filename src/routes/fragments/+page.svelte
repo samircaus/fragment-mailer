@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import type { AjoFragmentListItem } from '$lib/ajo/fragment-types.js';
 
 	interface LocalFragment {
 		id: string;
@@ -13,15 +12,10 @@
 	let localFragments = $state<LocalFragment[]>([]);
 	let isLoading = $state(true);
 	let loadError = $state('');
-
-	let showBrowse = $state(false);
-	let allFragments = $state<AjoFragmentListItem[]>([]);
-	let isBrowseLoading = $state(false);
-	let browseError = $state('');
-	let isCreating = $state(false);
-	let createName = $state('');
-	let createDescription = $state('');
-	let createError = $state('');
+	let showNewFragmentForm = $state(false);
+	let newFragmentName = $state('');
+	let newFragmentCreating = $state(false);
+	let newFragmentError = $state('');
 
 	onMount(() => {
 		void loadLocalFragments();
@@ -51,52 +45,17 @@
 		}
 	}
 
-	async function loadAllFragments() {
-		if (allFragments.length > 0) {
-			showBrowse = true;
-			return;
-		}
-		isBrowseLoading = true;
-		browseError = '';
-		showBrowse = true;
-		try {
-			const res = await fetch('/api/ajo/fragments?type=expression');
-			if (!res.ok) {
-				let detail = '';
-				try {
-					const body = (await res.json()) as { message?: string };
-					detail = body.message ?? '';
-				} catch {
-					// ignore
-				}
-				throw new Error(detail || `Failed to load AJO fragments (${res.status})`);
-			}
-			const data = (await res.json()) as { fragments: AjoFragmentListItem[] };
-			allFragments = data.fragments;
-		} catch (err) {
-			browseError = err instanceof Error ? err.message : 'Failed to load AJO fragments';
-		} finally {
-			isBrowseLoading = false;
-		}
-	}
-
 	async function createLocalFragment() {
-		const name = createName.trim();
-		if (!name) {
-			createError = 'Name is required.';
-			return;
-		}
+		const name = newFragmentName.trim();
+		if (!name || newFragmentCreating) return;
 
-		isCreating = true;
-		createError = '';
+		newFragmentCreating = true;
+		newFragmentError = '';
 		try {
 			const res = await fetch('/api/ajo/fragments', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					name,
-					description: createDescription.trim()
-				})
+				body: JSON.stringify({ name })
 			});
 			if (!res.ok) {
 				let detail = '';
@@ -111,31 +70,26 @@
 			const data = (await res.json()) as { id: string };
 			await goto(`/fragments/${encodeURIComponent(data.id)}`);
 		} catch (err) {
-			createError = err instanceof Error ? err.message : 'Failed to create fragment';
+			newFragmentError = err instanceof Error ? err.message : 'Failed to create fragment';
 		} finally {
-			isCreating = false;
-		}
-	}
-
-	function statusLabel(status: string): string {
-		switch (status) {
-			case 'PUBLISHED':
-				return 'Live';
-			case 'PUBLISHING':
-				return 'Publishing';
-			default:
-				return 'Draft';
+			newFragmentCreating = false;
 		}
 	}
 
 	function formatDate(iso?: string): string {
-		if (!iso) return '—';
+		if (!iso) return '';
 		const d = new Date(iso);
-		if (Number.isNaN(d.getTime())) return '—';
+		if (Number.isNaN(d.getTime())) return '';
 		return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 	}
 
-	const localIds = $derived(new Set(localFragments.map((f) => f.id)));
+	function statusClass(fragment: LocalFragment): string {
+		return fragment.source === 'draft' ? 'status-never-pushed' : 'status-synced';
+	}
+
+	function statusLabel(fragment: LocalFragment): string {
+		return fragment.source === 'draft' ? 'Local draft' : 'In AJO';
+	}
 </script>
 
 <div class="page">
@@ -157,159 +111,68 @@
 		<div class="section-header">
 			<div>
 				<h2>AJO Fragments</h2>
-				<p class="section-desc">Create local drafts, then sync them to AJO when ready.</p>
 			</div>
-			<div class="header-actions">
-				<button
-					type="button"
-					class="refresh-btn"
-					onclick={() => loadLocalFragments()}
-					disabled={isLoading}
-				>
-					Refresh
-				</button>
-			</div>
+			<button
+				type="button"
+				class="action-btn"
+				onclick={() => {
+					showNewFragmentForm = !showNewFragmentForm;
+					newFragmentError = '';
+				}}
+			>
+				{showNewFragmentForm ? 'Cancel' : 'New fragment'}
+			</button>
 		</div>
 
-		<form class="create-card" onsubmit={(e) => (e.preventDefault(), createLocalFragment())}>
-			<h3 class="create-title">New fragment</h3>
-			<div class="create-fields">
-				<div class="field">
-					<label for="new-fragment-name">Name</label>
-					<input
-						id="new-fragment-name"
-						type="text"
-						bind:value={createName}
-						placeholder="My fragment"
-						maxlength="120"
-						required
-						disabled={isCreating}
-					/>
-				</div>
-				<div class="field">
-					<label for="new-fragment-description">Description</label>
-					<textarea
-						id="new-fragment-description"
-						bind:value={createDescription}
-						placeholder="Describe fragment"
-						maxlength="600"
-						rows="2"
-						disabled={isCreating}
-					></textarea>
-				</div>
-			</div>
-			<div class="create-actions">
-				<button type="submit" class="create-btn" disabled={isCreating}>
-					{isCreating ? 'Creating…' : 'Create fragment'}
-				</button>
-				{#if createError}
-					<p class="create-error">{createError}</p>
+		{#if showNewFragmentForm}
+			<form
+				class="new-fragment-form"
+				onsubmit={(e) => {
+					e.preventDefault();
+					void createLocalFragment();
+				}}
+			>
+				<label>
+					<span>Fragment name</span>
+					<input type="text" bind:value={newFragmentName} placeholder="Hero banner" required />
+				</label>
+				{#if newFragmentError}
+					<p class="form-error">{newFragmentError}</p>
 				{/if}
-			</div>
-		</form>
+				<button type="submit" class="action-btn" disabled={!newFragmentName.trim() || newFragmentCreating}>
+					{newFragmentCreating ? 'Creating…' : 'Create & edit'}
+				</button>
+			</form>
+		{/if}
 
 		{#if isLoading}
-			<p class="status-message">Loading…</p>
+			<p class="status-message">Loading fragments…</p>
 		{:else if loadError}
 			<p class="status-message error">{loadError}</p>
 		{:else if localFragments.length === 0}
-			<p class="status-message">No fragments tracked here yet.</p>
+			<p class="status-message"></p>
 		{:else}
-			<div class="list-wrap">
-				<table class="list-table">
-					<thead>
-						<tr>
-							<th>Name</th>
-							<th>ID</th>
-							<th>Last modified here</th>
-							<th></th>
-						</tr>
-					</thead>
-					<tbody>
-						{#each localFragments as fragment (fragment.id)}
-							<tr>
-								<td class="name-cell">
-									<a href="/fragments/{fragment.id}" class="row-link">{fragment.name}</a>
-									{#if fragment.source === 'draft'}
-										<span class="draft-chip">local draft</span>
-									{/if}
-								</td>
-								<td class="mono-cell" title={fragment.id}>{fragment.id}</td>
-								<td class="date-cell">{formatDate(fragment.updatedAt)}</td>
-								<td class="action-cell">
-									<a href="/fragments/{fragment.id}" class="row-action">Edit</a>
-								</td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
+			<div class="card-grid">
+				{#each localFragments as fragment (fragment.id)}
+					<a href="/fragments/{fragment.id}" class="card">
+						<div class="card-top">
+							<span class="status-chip {statusClass(fragment)}">
+								<span class="status-dot" aria-hidden="true"></span>
+								{statusLabel(fragment)}
+							</span>
+						</div>
+						<h3>{fragment.name}</h3>
+						<p class="fragment-id" title={fragment.id}>{fragment.id}</p>
+						<div class="card-footer">
+							{#if fragment.updatedAt}
+								<span class="date">{formatDate(fragment.updatedAt)}</span>
+							{/if}
+							<span class="card-arrow">Open →</span>
+						</div>
+					</a>
+				{/each}
 			</div>
 		{/if}
-
-		<div class="browse-section">
-			<button
-				type="button"
-				class="browse-toggle"
-				onclick={() => (showBrowse ? (showBrowse = false) : loadAllFragments())}
-			>
-				{showBrowse ? 'Hide AJO fragments' : 'Browse all AJO fragments'}
-			</button>
-
-			{#if showBrowse}
-				<div class="browse-body">
-					{#if isBrowseLoading}
-						<p class="status-message">Loading AJO fragments…</p>
-					{:else if browseError}
-						<p class="status-message error">{browseError}</p>
-					{:else if allFragments.length === 0}
-						<p class="status-message">No expression fragments found in AJO.</p>
-					{:else}
-						<p class="browse-hint">
-							Click a fragment to open and edit it — it will be added to your tracked list above.
-						</p>
-						<div class="list-wrap">
-							<table class="list-table">
-								<thead>
-									<tr>
-										<th>Name</th>
-										<th>Status</th>
-										<th>ID</th>
-										<th>Modified</th>
-										<th></th>
-									</tr>
-								</thead>
-								<tbody>
-									{#each allFragments as fragment (fragment.id)}
-										<tr class={localIds.has(fragment.id) ? 'tracked-row' : ''}>
-											<td class="name-cell">
-												<a href="/fragments/{fragment.id}" class="row-link">{fragment.name}</a>
-												{#if fragment.description}
-													<p class="description">{fragment.description}</p>
-												{/if}
-											</td>
-											<td>
-												<span class="status-chip status-{fragment.status.toLowerCase()}">
-													{statusLabel(fragment.status)}
-												</span>
-											</td>
-											<td class="mono-cell" title={fragment.id}>{fragment.id}</td>
-											<td class="date-cell">{formatDate(fragment.modifiedAt)}</td>
-											<td class="action-cell">
-												{#if localIds.has(fragment.id)}
-													<span class="tracked-badge">tracked</span>
-												{:else}
-													<a href="/fragments/{fragment.id}" class="row-action">Open</a>
-												{/if}
-											</td>
-										</tr>
-									{/each}
-								</tbody>
-							</table>
-						</div>
-					{/if}
-				</div>
-			{/if}
-		</div>
 	</main>
 </div>
 
@@ -402,114 +265,57 @@
 		margin-bottom: 6px;
 	}
 
-	.section-desc {
-		font-size: 13px;
-		color: #71717a;
-		line-height: 1.5;
-		max-width: 560px;
-	}
-
-	.header-actions {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-	}
-
-	.refresh-btn {
+	.action-btn {
 		font: inherit;
 		font-size: 12px;
 		font-weight: 600;
 		padding: 6px 12px;
 		border-radius: 6px;
-		border: 1px solid #e4e4e7;
-		background: #fff;
-		color: #3f3f46;
+		border: 1px solid #5b5bd6;
+		background: #5b5bd6;
+		color: #fff;
 		cursor: pointer;
 		flex-shrink: 0;
 	}
 
-	.refresh-btn:hover:not(:disabled) {
-		border-color: #5b5bd6;
-		color: #5b5bd6;
-	}
-
-	.refresh-btn:disabled {
-		opacity: 0.6;
-		cursor: not-allowed;
-	}
-
-	.create-card {
-		background: #fff;
-		border: 1px solid #e4e4e7;
-		border-radius: 10px;
-		padding: 14px;
-		margin-bottom: 18px;
-	}
-
-	.create-title {
-		font-size: 13px;
-		font-weight: 600;
-		color: #111;
-		margin-bottom: 12px;
-	}
-
-	.create-fields {
-		display: flex;
-		flex-direction: column;
-		gap: 10px;
-	}
-
-	.field label {
-		display: block;
-		font-size: 11px;
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.4px;
-		color: #71717a;
-		margin-bottom: 6px;
-	}
-
-	.field input,
-	.field textarea {
-		width: 100%;
-		font: inherit;
-		font-size: 13px;
-		padding: 8px 10px;
-		border: 1px solid #e4e4e7;
-		border-radius: 8px;
-		background: #fff;
-		resize: vertical;
-	}
-
-	.create-actions {
-		margin-top: 10px;
-		display: flex;
-		align-items: center;
-		gap: 12px;
-	}
-
-	.create-btn {
-		font: inherit;
-		font-size: 12px;
-		font-weight: 600;
-		padding: 7px 12px;
-		border: none;
-		border-radius: 6px;
-		background: #5b5bd6;
-		color: #fff;
-		cursor: pointer;
-	}
-
-	.create-btn:disabled {
-		opacity: 0.6;
-		cursor: not-allowed;
-	}
-
-	.create-btn:hover:not(:disabled) {
+	.action-btn:hover:not(:disabled) {
 		background: #4f4fc4;
 	}
 
-	.create-error {
+	.action-btn:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+	}
+
+	.new-fragment-form {
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+		max-width: 420px;
+		margin-bottom: 24px;
+		padding: 16px;
+		background: #fff;
+		border: 1px solid #e4e4e7;
+		border-radius: 10px;
+	}
+
+	.new-fragment-form label {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		font-size: 12px;
+		font-weight: 600;
+		color: #3f3f46;
+	}
+
+	.new-fragment-form input {
+		font: inherit;
+		padding: 8px 10px;
+		border: 1px solid #e4e4e7;
+		border-radius: 6px;
+	}
+
+	.form-error {
 		font-size: 12px;
 		color: #b91c1c;
 	}
@@ -523,167 +329,113 @@
 		color: #b91c1c;
 	}
 
-	.list-wrap {
+	.card-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+		gap: 12px;
+	}
+
+	.card {
 		background: #fff;
 		border: 1px solid #e4e4e7;
 		border-radius: 10px;
-		overflow: hidden;
-	}
-
-	.list-table {
-		width: 100%;
-		border-collapse: collapse;
-		font-size: 13px;
-	}
-
-	.list-table th {
-		text-align: left;
-		font-size: 11px;
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.4px;
-		color: #71717a;
-		padding: 10px 14px;
-		background: #fafafa;
-		border-bottom: 1px solid #e4e4e7;
-	}
-
-	.list-table td {
-		padding: 12px 14px;
-		border-bottom: 1px solid #f4f4f5;
-		vertical-align: middle;
-	}
-
-	.list-table tbody tr:last-child td {
-		border-bottom: none;
-	}
-
-	.list-table tbody tr:hover {
-		background: #fafaff;
-	}
-
-	.row-link {
-		color: #111;
-		font-weight: 600;
+		padding: 20px;
 		text-decoration: none;
+		color: inherit;
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+		transition:
+			border-color 0.12s,
+			box-shadow 0.12s,
+			transform 0.12s;
 	}
 
-	.row-link:hover {
-		color: #5b5bd6;
+	.card:hover {
+		border-color: #5b5bd6;
+		box-shadow: 0 0 0 3px rgba(91, 91, 214, 0.08);
+		transform: translateY(-1px);
 	}
 
-	.description {
-		font-size: 12px;
-		color: #71717a;
-		margin-top: 4px;
-		line-height: 1.4;
-	}
-
-	.draft-chip {
-		display: inline-block;
-		margin-left: 8px;
-		font-size: 10px;
-		font-weight: 600;
-		color: #5b5bd6;
-		background: #ededfc;
-		padding: 2px 6px;
-		border-radius: 999px;
-		text-transform: uppercase;
-		letter-spacing: 0.3px;
+	.card-top {
+		display: flex;
+		align-items: center;
+		gap: 6px;
 	}
 
 	.status-chip {
-		display: inline-block;
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
 		font-size: 11px;
 		font-weight: 600;
 		padding: 2px 8px;
 		border-radius: 999px;
 	}
 
-	.status-draft,
-	.status-publishing {
+	.status-dot {
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		flex-shrink: 0;
+	}
+
+	.status-never-pushed {
 		background: #f4f4f5;
 		color: #52525b;
 	}
 
-	.status-published {
+	.status-never-pushed .status-dot {
+		background: #a1a1aa;
+	}
+
+	.status-synced {
 		background: #dcfce7;
 		color: #15803d;
 	}
 
-	.mono-cell {
+	.status-synced .status-dot {
+		background: #22c55e;
+	}
+
+	h3 {
+		font-size: 14px;
+		font-weight: 600;
+		color: #111;
+		letter-spacing: -0.2px;
+		line-height: 1.4;
+	}
+
+	.fragment-id {
 		font-family: 'SF Mono', 'Fira Code', monospace;
 		font-size: 11px;
-		color: #a1a1aa;
-		max-width: 180px;
+		color: #71717a;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
 
-	.date-cell {
+	.card-footer {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		margin-top: 2px;
+	}
+
+	.date {
 		font-size: 12px;
 		color: #a1a1aa;
-		white-space: nowrap;
 	}
 
-	.action-cell {
-		text-align: right;
-		width: 72px;
-	}
-
-	.row-action {
+	.card-arrow {
 		font-size: 12px;
-		font-weight: 600;
 		color: #5b5bd6;
-		text-decoration: none;
+		font-weight: 500;
+		opacity: 0;
+		transition: opacity 0.12s;
 	}
 
-	.row-action:hover {
-		text-decoration: underline;
-	}
-
-	.tracked-row {
-		background: #fafaff;
-	}
-
-	.tracked-badge {
-		font-size: 11px;
-		font-weight: 600;
-		color: #5b5bd6;
-		background: #ededfc;
-		padding: 2px 8px;
-		border-radius: 4px;
-	}
-
-	.browse-section {
-		margin-top: 40px;
-	}
-
-	.browse-toggle {
-		font: inherit;
-		font-size: 12px;
-		font-weight: 600;
-		color: #71717a;
-		background: none;
-		border: 1px solid #e4e4e7;
-		padding: 6px 12px;
-		border-radius: 6px;
-		cursor: pointer;
-	}
-
-	.browse-toggle:hover {
-		border-color: #5b5bd6;
-		color: #5b5bd6;
-	}
-
-	.browse-body {
-		margin-top: 16px;
-	}
-
-	.browse-hint {
-		font-size: 12px;
-		color: #71717a;
-		margin-bottom: 12px;
+	.card:hover .card-arrow {
+		opacity: 1;
 	}
 </style>

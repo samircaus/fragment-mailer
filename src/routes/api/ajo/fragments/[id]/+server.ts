@@ -134,18 +134,61 @@ export const PUT: RequestHandler = async ({ params, request, platform }) => {
 	const parsed = UpdateSchema.safeParse(body);
 	if (!parsed.success) throw error(400, `Invalid request: ${parsed.error.message}`);
 
-	const db = getDb(platform);
-	const localDraft = await getAjoFragmentDraft(db, params.id);
-	if (localDraft) {
-		if (!parsed.data.syncToAjo) {
-			await upsertAjoFragmentDraft(db, {
-				id: params.id,
+	try {
+		const db = getDb(platform);
+		const localDraft = await getAjoFragmentDraft(db, params.id);
+		if (localDraft) {
+			if (!parsed.data.syncToAjo) {
+				await upsertAjoFragmentDraft(db, {
+					id: params.id,
+					name: parsed.data.name ?? localDraft.name,
+					description: parsed.data.description ?? localDraft.description,
+					expression: parsed.data.expression,
+					subType: parsed.data.subType ?? localDraft.subType
+				});
+				return json({ ok: true, savedLocal: true, published: false });
+			}
+
+			const env = resolveAppEnv(platform?.env);
+			if (!isAjoConfigured(env)) {
+				throw error(503, 'AJO credentials not configured');
+			}
+
+			const ajoExpression = await ajoExpressionFromMjml(parsed.data.expression, env);
+			const payload = buildAjoExpressionFragmentPayload({
 				name: parsed.data.name ?? localDraft.name,
 				description: parsed.data.description ?? localDraft.description,
-				expression: parsed.data.expression,
-				subType: parsed.data.subType ?? localDraft.subType
+				expression: ajoExpression,
+				subType: 'HTML'
 			});
-			return json({ ok: true, savedLocal: true, published: false });
+			const created = await createFragment(payload, env);
+			if (created.error || !created.data) {
+				const status = created.status && created.status >= 400 ? created.status : 502;
+				throw error(status, created.error ?? 'Failed to create fragment in AJO');
+			}
+
+			let published = false;
+			if (parsed.data.publish !== false) {
+				const publishResult = await publishFragment(created.data.id, env);
+				if (publishResult.error) {
+					const status =
+						publishResult.status && publishResult.status >= 400 ? publishResult.status : 502;
+					throw error(status, publishResult.error);
+				}
+				published = true;
+			}
+
+			await upsertAjoFragment(db, {
+				id: created.data.id,
+				name: created.data.name
+			}).catch(() => undefined);
+			await deleteAjoFragmentDraft(db, params.id).catch(() => undefined);
+
+			return json({
+				ok: true,
+				published,
+				newFragmentId: created.data.id
+			});
 		}
 
 		const env = resolveAppEnv(platform?.env);
@@ -153,22 +196,30 @@ export const PUT: RequestHandler = async ({ params, request, platform }) => {
 			throw error(503, 'AJO credentials not configured');
 		}
 
+		const existing = await getFragment(params.id, env);
+		if (existing.error || !existing.data) {
+			const status = existing.status && existing.status >= 400 ? existing.status : 404;
+			throw error(status, existing.error ?? 'Fragment not found');
+		}
+
 		const ajoExpression = await ajoExpressionFromMjml(parsed.data.expression, env);
 		const payload = buildAjoExpressionFragmentPayload({
-			name: parsed.data.name ?? localDraft.name,
-			description: parsed.data.description ?? localDraft.description,
+			name: parsed.data.name ?? existing.data.name,
+			description: parsed.data.description ?? existing.data.description,
 			expression: ajoExpression,
 			subType: 'HTML'
 		});
-		const created = await createFragment(payload, env);
-		if (created.error || !created.data) {
-			const status = created.status && created.status >= 400 ? created.status : 502;
-			throw error(status, created.error ?? 'Failed to create fragment in AJO');
+
+		const etag = parsed.data.etag ?? existing.data.etag;
+		const updateResult = await updateFragment(params.id, payload, env, etag);
+		if (updateResult.error) {
+			const status = updateResult.status && updateResult.status >= 400 ? updateResult.status : 502;
+			throw error(status, updateResult.error);
 		}
 
 		let published = false;
 		if (parsed.data.publish !== false) {
-			const publishResult = await publishFragment(created.data.id, env);
+			const publishResult = await publishFragment(params.id, env);
 			if (publishResult.error) {
 				const status = publishResult.status && publishResult.status >= 400 ? publishResult.status : 502;
 				throw error(status, publishResult.error);
@@ -176,57 +227,19 @@ export const PUT: RequestHandler = async ({ params, request, platform }) => {
 			published = true;
 		}
 
-		await upsertAjoFragment(db, {
-			id: created.data.id,
-			name: created.data.name
-		}).catch(() => undefined);
-		await deleteAjoFragmentDraft(db, params.id).catch(() => undefined);
+		const savedName = parsed.data.name ?? existing.data.name;
+		await upsertAjoFragment(db, { id: params.id, name: savedName }).catch(() => undefined);
 
-		return json({
-			ok: true,
-			published,
-			newFragmentId: created.data.id
-		});
+		return json({ ok: true, published });
+	} catch (e) {
+		if (e && typeof e === 'object' && 'status' in e) throw e;
+		console.error(
+			JSON.stringify({
+				event: 'fragment_put_unhandled',
+				fragmentId: params.id,
+				error: e instanceof Error ? e.message : String(e)
+			})
+		);
+		throw error(500, e instanceof Error ? e.message : 'Failed to save fragment');
 	}
-
-	const env = resolveAppEnv(platform?.env);
-	if (!isAjoConfigured(env)) {
-		throw error(503, 'AJO credentials not configured');
-	}
-
-	const existing = await getFragment(params.id, env);
-	if (existing.error || !existing.data) {
-		const status = existing.status && existing.status >= 400 ? existing.status : 404;
-		throw error(status, existing.error ?? 'Fragment not found');
-	}
-
-	const ajoExpression = await ajoExpressionFromMjml(parsed.data.expression, env);
-	const payload = buildAjoExpressionFragmentPayload({
-		name: parsed.data.name ?? existing.data.name,
-		description: parsed.data.description ?? existing.data.description,
-		expression: ajoExpression,
-		subType: 'HTML'
-	});
-
-	const etag = parsed.data.etag ?? existing.data.etag;
-	const updateResult = await updateFragment(params.id, payload, env, etag);
-	if (updateResult.error) {
-		const status = updateResult.status && updateResult.status >= 400 ? updateResult.status : 502;
-		throw error(status, updateResult.error);
-	}
-
-	let published = false;
-	if (parsed.data.publish !== false) {
-		const publishResult = await publishFragment(params.id, env);
-		if (publishResult.error) {
-			const status = publishResult.status && publishResult.status >= 400 ? publishResult.status : 502;
-			throw error(status, publishResult.error);
-		}
-		published = true;
-	}
-
-	const savedName = parsed.data.name ?? existing.data.name;
-	await upsertAjoFragment(db, { id: params.id, name: savedName }).catch(() => undefined);
-
-	return json({ ok: true, published });
 };

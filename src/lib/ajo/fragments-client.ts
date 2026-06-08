@@ -38,11 +38,84 @@ const MAX_RETRIES = 3;
 
 function pickResponseHeaders(res: Response): Record<string, string> {
 	const out: Record<string, string> = {};
-	for (const key of ['content-type', 'etag', 'x-request-id', 'x-correlation-id']) {
+	for (const key of [
+		'content-type',
+		'etag',
+		'location',
+		'x-resource-id',
+		'x-request-id',
+		'x-correlation-id'
+	]) {
 		const v = res.headers.get(key);
 		if (v) out[key] = v;
 	}
 	return out;
+}
+
+function fragmentIdFromPath(pathname: string): string | undefined {
+	const match = pathname.match(/\/fragments\/([^/?]+)$/);
+	return match?.[1] ? decodeURIComponent(match[1]) : undefined;
+}
+
+function fragmentIdFromLocation(location: string): string | undefined {
+	const trimmed = location.trim();
+	if (!trimmed) return undefined;
+	try {
+		const url = new URL(trimmed, DEFAULT_BASE_URL);
+		return fragmentIdFromPath(url.pathname);
+	} catch {
+		return fragmentIdFromPath(trimmed.startsWith('/') ? trimmed : `/${trimmed}`);
+	}
+}
+
+function fragmentIdFromCreateResponse(
+	res: Response,
+	body: Record<string, unknown>
+): string | undefined {
+	const headerId =
+		res.headers.get('x-resource-id')?.trim() ||
+		(res.headers.get('location') && fragmentIdFromLocation(res.headers.get('location')!)) ||
+		'';
+	if (headerId) return headerId;
+
+	const bodyId =
+		(typeof body.id === 'string' && body.id.trim()) ||
+		(typeof body.fragmentId === 'string' && body.fragmentId.trim()) ||
+		'';
+	if (bodyId) return bodyId;
+
+	if (body.self && typeof body.self === 'object' && body.self !== null && 'href' in body.self) {
+		const fromSelf = fragmentIdFromLocation(String((body.self as { href: unknown }).href));
+		if (fromSelf) return fromSelf;
+	}
+
+	return undefined;
+}
+
+async function findFragmentIdByName(
+	name: string,
+	env: AppEnv
+): Promise<string | undefined> {
+	const list = await listFragments(env, { type: 'expression', limit: 100 });
+	if (list.error || !list.data) return undefined;
+
+	const matches = list.data.items.filter((item) => item.name === name);
+	if (matches.length === 0) return undefined;
+
+	matches.sort((a, b) => (b.modifiedAt ?? b.createdAt ?? '').localeCompare(a.modifiedAt ?? a.createdAt ?? ''));
+	return matches[0]?.id;
+}
+
+async function parseJsonResponseBody<T>(res: Response, method: string): Promise<Result<T>> {
+	const text = await res.text();
+	if (!text.trim()) {
+		return { data: {} as T };
+	}
+	try {
+		return { data: JSON.parse(text) as T };
+	} catch {
+		return { error: `AJO ${method} returned invalid JSON`, status: 502 };
+	}
 }
 
 async function buildClientOptions(env: AppEnv): Promise<Result<AjoFragmentClientOptions>> {
@@ -156,7 +229,7 @@ async function requestJson<T>(
 		return { data: {} as T };
 	}
 
-	return { data: (await res.json()) as T };
+	return parseJsonResponseBody<T>(res, method);
 }
 
 function sleep(ms: number): Promise<void> {
@@ -274,9 +347,11 @@ export async function getFragment(
 		return { error: `AJO GET failed ${res.status}: ${body}`, status: res.status };
 	}
 
-	const json = (await res.json()) as Record<string, unknown>;
+	const parsed = await parseJsonResponseBody<Record<string, unknown>>(res, 'GET');
+	if (parsed.error || !parsed.data) return parsed as Result<AjoExpressionFragmentDetail>;
+
 	const etag = res.headers.get('etag') ?? undefined;
-	return { data: mapFragmentDetail(json, etag) };
+	return { data: mapFragmentDetail(parsed.data, etag) };
 }
 
 export async function updateFragment(
@@ -312,19 +387,81 @@ export async function createFragment(
 	const client = await buildClientOptions(env);
 	if (client.error || !client.data) return { error: client.error!, status: client.status };
 
-	const result = await requestJson<Record<string, unknown>>(
-		'POST',
-		FRAGMENTS_PATH,
-		client.data,
-		env,
-		{
-			accept: AJO_FRAGMENT_CONTENT_TYPE,
-			contentType: AJO_FRAGMENT_CONTENT_TYPE,
-			body: payload
+	const baseUrl = client.data.baseUrl ?? DEFAULT_BASE_URL;
+	const url = `${baseUrl}${FRAGMENTS_PATH}`;
+
+	let res: Response;
+	try {
+		res = await fetch(url, {
+			method: 'POST',
+			headers: {
+				Authorization: `Bearer ${client.data.accessToken}`,
+				'x-api-key': client.data.apiKey,
+				'x-gw-ims-org-id': client.data.imsOrg,
+				'x-sandbox-name': client.data.sandboxName,
+				'Content-Type': AJO_FRAGMENT_CONTENT_TYPE
+			},
+			body: JSON.stringify(payload)
+		});
+	} catch (e) {
+		const errMsg = e instanceof Error ? e.message : String(e);
+		return { error: `AJO POST network error: ${errMsg}`, status: 502 };
+	}
+
+	if (!res.ok) {
+		const body = await res.text();
+		console.error(
+			JSON.stringify({
+				event: 'ajo_fragment_request_failed',
+				method: 'POST',
+				url,
+				status: res.status,
+				responseBody: body,
+				responseHeaders: pickResponseHeaders(res)
+			})
+		);
+		return { error: `AJO POST failed ${res.status}: ${body}`, status: res.status };
+	}
+
+	const parsed = await parseJsonResponseBody<Record<string, unknown>>(res, 'POST');
+	if (parsed.error) return parsed as Result<AjoExpressionFragmentDetail>;
+
+	const body = parsed.data ?? {};
+	const etag = res.headers.get('etag') ?? undefined;
+	let fragmentId = fragmentIdFromCreateResponse(res, body);
+
+	if (!fragmentId) {
+		fragmentId = await findFragmentIdByName(payload.name, env);
+	}
+
+	if (!fragmentId) {
+		console.error(
+			JSON.stringify({
+				event: 'ajo_fragment_create_missing_id',
+				status: res.status,
+				responseBody: body,
+				responseHeaders: pickResponseHeaders(res),
+				fragmentName: payload.name
+			})
+		);
+		return { error: 'AJO create succeeded but returned no fragment id', status: 502 };
+	}
+
+	const fetched = await getFragment(fragmentId, env);
+	if (fetched.data) return fetched;
+
+	return {
+		data: {
+			...mapFragmentDetail(body, etag),
+			id: fragmentId,
+			name: payload.name,
+			type: 'expression',
+			status: 'DRAFT',
+			channels: ['shared'],
+			subType: payload.subType,
+			fragment: payload.fragment
 		}
-	);
-	if (result.error || !result.data) return result as Result<AjoExpressionFragmentDetail>;
-	return { data: mapFragmentDetail(result.data) };
+	};
 }
 
 export async function publishFragment(

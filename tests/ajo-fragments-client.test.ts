@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+	createFragment,
 	getFragment,
 	listFragments,
 	publishFragment,
@@ -135,5 +136,133 @@ describe('getFragment', () => {
 
 		expect(result.data?.fragment.expression).toBe('© Acme');
 		expect(result.data?.etag).toBe('"v1"');
+	});
+});
+
+describe('createFragment', () => {
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it('reads fragment id from Location when POST body is empty', async () => {
+		const fetchMock = vi.spyOn(globalThis, 'fetch')
+			.mockResolvedValueOnce(
+				new Response('', {
+					status: 201,
+					headers: {
+						'content-type': 'application/json',
+						location: 'https://platform.adobe.io/ajo/content/fragments/frag-new-123'
+					}
+				})
+			)
+			.mockResolvedValueOnce(
+				new Response(
+					JSON.stringify({
+						id: 'frag-new-123',
+						name: 'brand-footer',
+						type: 'expression',
+						status: 'DRAFT',
+						channels: ['shared'],
+						subType: 'HTML',
+						fragment: { expression: '© Acme' }
+					}),
+					{
+						status: 200,
+						headers: { 'content-type': 'application/vnd.adobe.ajo.fragment.v1.0+json' }
+					}
+				)
+			);
+
+		const payload = buildAjoExpressionFragmentPayload({
+			name: 'brand-footer',
+			expression: '© Acme'
+		});
+		const result = await createFragment(payload, env);
+
+		expect(result.data?.id).toBe('frag-new-123');
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+	});
+
+	it('reads fragment id from x-resource-id header', async () => {
+		const fetchMock = vi.spyOn(globalThis, 'fetch')
+			.mockResolvedValueOnce(
+				new Response('', {
+					status: 201,
+					headers: {
+						'content-type': 'application/json',
+						'x-resource-id': 'frag-header-456'
+					}
+				})
+			)
+			.mockResolvedValueOnce(
+				new Response(
+					JSON.stringify({
+						id: 'frag-header-456',
+						name: 'header-frag',
+						type: 'expression',
+						status: 'DRAFT',
+						channels: ['shared'],
+						subType: 'HTML',
+						fragment: { expression: 'Hi' }
+					}),
+					{ status: 200, headers: { 'content-type': 'application/vnd.adobe.ajo.fragment.v1.0+json' } }
+				)
+			);
+
+		const payload = buildAjoExpressionFragmentPayload({
+			name: 'header-frag',
+			expression: 'Hi'
+		});
+		const result = await createFragment(payload, env);
+
+		expect(result.data?.id).toBe('frag-header-456');
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+		const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+		expect((init.headers as Record<string, string>).Accept).toBeUndefined();
+	});
+
+	it('falls back to listing fragments by name when headers are missing', async () => {
+		const fetchMock = vi.spyOn(globalThis, 'fetch')
+			.mockResolvedValueOnce(new Response('', { status: 201, headers: { 'content-type': 'application/json' } }))
+			.mockResolvedValueOnce(
+				new Response(
+					JSON.stringify({
+						items: [
+							{
+								id: 'frag-listed-789',
+								name: 'footer-frag',
+								type: 'expression',
+								status: 'DRAFT',
+								channels: ['shared'],
+								modifiedAt: '2026-06-08T12:00:00.000Z'
+							}
+						]
+					}),
+					{ status: 200, headers: { 'content-type': 'application/vnd.adobe.ajo.fragment-list.v1.0+json' } }
+				)
+			)
+			.mockResolvedValueOnce(
+				new Response(
+					JSON.stringify({
+						id: 'frag-listed-789',
+						name: 'footer-frag',
+						type: 'expression',
+						status: 'DRAFT',
+						channels: ['shared'],
+						subType: 'HTML',
+						fragment: { expression: 'Footer' }
+					}),
+					{ status: 200, headers: { 'content-type': 'application/vnd.adobe.ajo.fragment.v1.0+json' } }
+				)
+			);
+
+		const payload = buildAjoExpressionFragmentPayload({
+			name: 'footer-frag',
+			expression: 'Footer'
+		});
+		const result = await createFragment(payload, env);
+
+		expect(result.data?.id).toBe('frag-listed-789');
+		expect(fetchMock).toHaveBeenCalledTimes(3);
 	});
 });

@@ -23,8 +23,13 @@
 		parseEnvelopeHtmlComment,
 		type EmailEnvelope
 	} from '$lib/preview/envelope.js';
+	import type { AjoExpressionFragmentDetail } from '$lib/ajo/fragment-types.js';
+	import {
+		isMjmlFragmentSource,
+		unwrapFragmentMjmlForEdit
+	} from '$lib/mjml/fragment-mjml.js';
 
-	type EmailEditorMode = 'campaign' | 'standalone';
+	type EmailEditorMode = 'campaign' | 'standalone' | 'fragment';
 
 	interface Props {
 		mode?: EmailEditorMode;
@@ -69,12 +74,18 @@
 	// ─── State ──────────────────────────────────────────────────────────────────
 	const campaignId = $derived(mode === 'campaign' ? entityId : '');
 	const standaloneTemplateId = $derived(mode === 'standalone' ? entityId : '');
+	const fragmentId = $derived(mode === 'fragment' ? entityId : '');
 	const isStandalone = $derived(mode === 'standalone');
+	const isFragment = $derived(mode === 'fragment');
 
 	let campaign = $state<Campaign | null>(null);
 	let cfVersion = $state('');
 	let standaloneEmailStatus = $state<EmailStatusInfo | undefined>();
 	let standaloneName = $state('');
+	let fragmentMeta = $state<AjoExpressionFragmentDetail | null>(null);
+	let fragmentEtag = $state<string | undefined>();
+	let isLocalFragmentDraft = $state(false);
+	let fragmentLoadError = $state('');
 	let isLoading = $state(true);
 
 	// Template
@@ -243,7 +254,9 @@
 			previewChrome = storedChrome;
 		}
 
-		if (isStandalone) {
+		if (isFragment) {
+			await Promise.all([loadFragment(), loadPreviewContext()]);
+		} else if (isStandalone) {
 			await Promise.all([loadStandaloneTemplate(), loadTemplates(), loadPreviewContext()]);
 			if (standaloneTemplateId) {
 				selectedTemplateId = resolveTemplateSelectionId(standaloneTemplateId, templates);
@@ -258,9 +271,17 @@
 	});
 
 	$effect(() => {
-		if (isStandalone || !campaignId || !selectedTemplateId) return;
+		if (isFragment || isStandalone || !campaignId || !selectedTemplateId) return;
 		selectedTemplateId;
 		void loadContentModelFields();
+	});
+
+	// Load MJML when selected template changes
+	$effect(() => {
+		if (isFragment) return;
+		if (selectedTemplateId) {
+			loadTemplateMJML(selectedTemplateId);
+		}
 	});
 
 	async function loadPreviewContext() {
@@ -299,13 +320,6 @@
 		window.addEventListener('mouseup', onUp);
 	}
 
-	// Load MJML when selected template changes
-	$effect(() => {
-		if (selectedTemplateId) {
-			loadTemplateMJML(selectedTemplateId);
-		}
-	});
-
 	// Rebuild structure tree whenever MJML code changes
 	$effect(() => {
 		treeNodes = buildTree(mjmlCode);
@@ -315,13 +329,16 @@
 	$effect(() => {
 		const mjml = mjmlCode;
 		const tab = activeTab;
-		const id = isStandalone ? standaloneTemplateId : campaignId;
+		const id = isFragment ? fragmentId : isStandalone ? standaloneTemplateId : campaignId;
 		const templateId = selectedTemplateId;
 		const personaId = selectedPersonaId;
 		const persona = selectedPersona;
 		const version = cfVersion;
 
-		if (tab !== 'html' || !id || !templateId || !mjml.trim()) {
+		if (tab !== 'html' || !id || !mjml.trim()) {
+			return;
+		}
+		if (!isFragment && !templateId) {
 			return;
 		}
 
@@ -379,8 +396,51 @@
 		}
 	}
 
+	async function loadFragment(id = fragmentId) {
+		isLoading = true;
+		fragmentLoadError = '';
+		try {
+			const res = await fetch(`/api/ajo/fragments/${encodeURIComponent(id)}`);
+			if (!res.ok) {
+				let detail = '';
+				const contentType = res.headers.get('content-type') ?? '';
+				if (contentType.includes('json')) {
+					try {
+						const body = (await res.json()) as { message?: string };
+						detail = body.message ?? '';
+					} catch {
+						// ignore
+					}
+				} else {
+					detail = (await res.text()).trim();
+				}
+				throw new Error(detail || `Failed to load fragment (${res.status})`);
+			}
+			const data = (await res.json()) as {
+				fragment: AjoExpressionFragmentDetail;
+				isLocalDraft?: boolean;
+			};
+			fragmentMeta = {
+				...data.fragment,
+				description: data.fragment.description ?? ''
+			};
+			isLocalFragmentDraft = Boolean(data.isLocalDraft);
+			const expression = data.fragment.fragment?.expression ?? '';
+			mjmlCode = isMjmlFragmentSource(expression)
+				? unwrapFragmentMjmlForEdit(expression)
+				: expression;
+			fragmentEtag = data.fragment.etag;
+			isDirty = false;
+			saveStatus = 'idle';
+		} catch (err) {
+			fragmentLoadError = err instanceof Error ? err.message : 'Failed to load fragment';
+		} finally {
+			isLoading = false;
+		}
+	}
+
 	async function loadContentModelFields() {
-		if (isStandalone || !campaignId) return;
+		if (isFragment || isStandalone || !campaignId) return;
 		try {
 			const templateQuery = selectedTemplateId
 				? `?templateId=${encodeURIComponent(selectedTemplateId)}`
@@ -442,7 +502,7 @@
 		cachedCfVersion = ''
 	) {
 		try {
-			const res = isStandalone
+			const res = isFragment || isStandalone
 				? await fetch('/api/compile/standalone', {
 						method: 'POST',
 						headers: { 'Content-Type': 'application/json' },
@@ -521,6 +581,47 @@
 	}
 
 	async function handleSave() {
+		if (isFragment) {
+			if (!fragmentId || !fragmentMeta || !mjmlCode) return;
+			const name = fragmentMeta.name.trim();
+			if (!name) return;
+			saveStatus = 'saving';
+			try {
+				const res = await fetch(`/api/ajo/fragments/${encodeURIComponent(fragmentId)}`, {
+					method: 'PUT',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						expression: mjmlCode,
+						name,
+						description: fragmentMeta.description?.trim() ?? '',
+						subType: fragmentMeta.subType ?? 'HTML',
+						etag: fragmentEtag,
+						publish: !isLocalFragmentDraft,
+						syncToAjo: false
+					})
+				});
+				if (!res.ok) {
+					let detail = '';
+					try {
+						const body = (await res.json()) as { message?: string };
+						detail = body.message ?? '';
+					} catch {
+						// ignore
+					}
+					throw new Error(detail || `${res.status}`);
+				}
+				isDirty = false;
+				saveStatus = 'saved';
+				iframeKey += 1;
+				await loadFragment(fragmentId);
+				setTimeout(() => (saveStatus = 'idle'), 2000);
+			} catch {
+				saveStatus = 'error';
+				setTimeout(() => (saveStatus = 'idle'), 3000);
+			}
+			return;
+		}
+
 		if (!selectedTemplateId || !mjmlCode) return;
 		saveStatus = 'saving';
 		try {
@@ -596,6 +697,77 @@
 			console.error('Failed to delete template version:', err);
 			deleteVersionStatus = 'error';
 			setTimeout(() => (deleteVersionStatus = 'idle'), 3000);
+		}
+	}
+
+	async function handleFragmentPublish() {
+		if (!fragmentId || !fragmentMeta || ajoPushStatus === 'exporting') return;
+		const name = fragmentMeta.name.trim();
+		if (!name) return;
+
+		ajoPushStatus = 'exporting';
+		ajoFeedbackOpen = false;
+		try {
+			const res = await fetch(`/api/ajo/fragments/${encodeURIComponent(fragmentId)}`, {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					expression: mjmlCode,
+					name,
+					description: fragmentMeta.description?.trim() ?? '',
+					subType: fragmentMeta.subType ?? 'HTML',
+					etag: fragmentEtag,
+					publish: true,
+					syncToAjo: isLocalFragmentDraft
+				})
+			});
+			const data = (await res.json().catch(() => ({}))) as {
+				message?: string;
+				newFragmentId?: string;
+			};
+			if (!res.ok) {
+				throw new Error(data.message ?? `Publish failed: ${res.status}`);
+			}
+			if (data.newFragmentId) {
+				await goto(`/fragments/${encodeURIComponent(data.newFragmentId)}`);
+				return;
+			}
+			openAjoFeedback({
+				kind: 'success',
+				title: 'Published to AJO',
+				message: `${name} is live in AJO.`
+			});
+			ajoPushStatus = 'done';
+			isDirty = false;
+			iframeKey += 1;
+			await loadFragment(fragmentId);
+			setTimeout(() => (ajoPushStatus = 'idle'), 5000);
+		} catch (e) {
+			const msg = e instanceof Error ? e.message : 'Publish failed';
+			openAjoFeedback({ kind: 'error', title: 'Publish failed', message: msg });
+			ajoPushStatus = 'error';
+			setTimeout(() => (ajoPushStatus = 'idle'), 5000);
+		}
+	}
+
+	function fragmentStatusLabel(status?: string): string {
+		switch (status) {
+			case 'PUBLISHED':
+				return 'Live';
+			case 'PUBLISHING':
+				return 'Publishing';
+			default:
+				return isLocalFragmentDraft ? 'Local draft' : 'Draft';
+		}
+	}
+
+	function fragmentStatusClass(status?: string): string {
+		if (isLocalFragmentDraft) return 'sync-never-pushed';
+		switch (status) {
+			case 'PUBLISHED':
+				return 'sync-synced';
+			default:
+				return 'sync-never-pushed';
 		}
 	}
 
@@ -1309,12 +1481,12 @@
 	const ajoSandbox = $derived($page.data?.aem?.ajoSandboxName ?? 'prod');
 
 	const cfAuthorUrl = $derived.by(() => {
-		if (isStandalone || !campaign?.cfUuid) return null;
+		if (isFragment || isStandalone || !campaign?.cfUuid) return null;
 		return cfExperienceCloudEditorUrl(campaign.cfUuid, aemAuthorUrl, cfEditorTenant);
 	});
 
 	const ueCanvasUrl = $derived.by(() => {
-		if (isStandalone || !campaignId || !aemAuthorUrl) return null;
+		if (isFragment || isStandalone || !campaignId || !aemAuthorUrl) return null;
 		return universalEditorCanvasUrl(campaignId, $page.url.origin, aemAuthorUrl, cfEditorTenant);
 	});
 
@@ -1325,16 +1497,26 @@
 	});
 
 	const editorTitle = $derived(
-		isStandalone ? (standaloneName || standaloneTemplateId) : (campaign?.name ?? campaignId)
+		isFragment
+			? (fragmentMeta?.name ?? fragmentId)
+			: isStandalone
+				? (standaloneName || standaloneTemplateId)
+				: (campaign?.name ?? campaignId)
 	);
 
-	const backHref = $derived(isStandalone ? '/templates' : '/');
-	const backLabel = $derived(isStandalone ? 'Templates' : 'Emails');
+	const backHref = $derived(isFragment ? '/fragments' : isStandalone ? '/templates' : '/');
+	const backLabel = $derived(isFragment ? 'Fragments' : isStandalone ? 'Templates' : 'Emails');
 
 	const ajoSyncStatus = $derived(
-		isStandalone
-			? (standaloneEmailStatus?.syncStatus ?? 'never_pushed')
-			: (campaign?.status ?? campaign?.emailStatus?.syncStatus ?? 'never_pushed')
+		isFragment
+			? isLocalFragmentDraft
+				? 'never_pushed'
+				: fragmentMeta?.status === 'PUBLISHED'
+					? 'synced'
+					: 'never_pushed'
+			: isStandalone
+				? (standaloneEmailStatus?.syncStatus ?? 'never_pushed')
+				: (campaign?.status ?? campaign?.emailStatus?.syncStatus ?? 'never_pushed')
 	);
 
 	const ajoSyncChipTitle = $derived.by(() => {
@@ -1351,6 +1533,12 @@
 	});
 
 	const pushButtonLabel = $derived.by(() => {
+		if (isFragment) {
+			if (ajoPushStatus === 'exporting') return isLocalFragmentDraft ? 'Syncing…' : 'Publishing…';
+			if (ajoPushStatus === 'done') return isLocalFragmentDraft ? 'Synced ✓' : 'Published ✓';
+			if (ajoPushStatus === 'error') return 'Publish failed';
+			return isLocalFragmentDraft ? 'Sync to AJO' : 'Publish to AJO';
+		}
 		if (ajoPushStatus === 'exporting') return 'Sending…';
 		if (ajoPushStatus === 'done') return 'Sent ✓';
 		if (ajoPushStatus === 'error') return 'Send failed';
@@ -1380,6 +1568,9 @@
 		});
 		if (selectedPersona) {
 			params.set('persona', JSON.stringify(selectedPersona));
+		}
+		if (isFragment) {
+			return `/preview/fragment/${encodeURIComponent(fragmentId)}?${params}`;
 		}
 		if (isStandalone) {
 			return `/preview/standalone/${encodeURIComponent(standaloneTemplateId)}?${params}`;
@@ -1430,7 +1621,7 @@
 		</a>
 		<div class="topbar-divider"></div>
 		<div class="campaign-name">{editorTitle}</div>
-		{#if !isStandalone && (cfAuthorUrl || ueCanvasUrl)}
+		{#if !isStandalone && !isFragment && (cfAuthorUrl || ueCanvasUrl)}
 			<div class="author-links">
 				{#if cfAuthorUrl}
 					<a
@@ -1475,6 +1666,30 @@
 			</div>
 		{/if}
 		<div class="topbar-spacer"></div>
+		{#if isFragment}
+			<div class="ajo-group">
+				<div class="ajo-push-group">
+					<span
+						class="sync-chip {fragmentStatusClass(fragmentMeta?.status)}"
+						title={fragmentStatusLabel(fragmentMeta?.status)}
+					>
+						<span class="sync-dot" aria-hidden="true"></span>
+						{fragmentStatusLabel(fragmentMeta?.status)}
+					</span>
+					<button
+						class="export-btn"
+						class:loading={ajoPushStatus === 'exporting'}
+						class:done={ajoPushStatus === 'done'}
+						class:error={ajoPushStatus === 'error'}
+						onclick={handleFragmentPublish}
+						disabled={ajoPushStatus === 'exporting' || !fragmentMeta}
+						title={isLocalFragmentDraft ? 'Create this fragment in AJO' : 'Publish updates to AJO'}
+					>
+						{pushButtonLabel}
+					</button>
+				</div>
+			</div>
+		{:else}
 		<div class="ajo-group">
 			<div class="ajo-html-actions">
 				<button
@@ -1630,11 +1845,41 @@
 				{/if}
 			</div>
 		</div>
+		{/if}
 	</header>
+
+	{#if isFragment && fragmentLoadError}
+		<div class="fragment-load-error">{fragmentLoadError}</div>
+	{/if}
 
 	<div class="panels" class:resizing={isResizingPanel}>
 		<!-- ─── Left panel ──────────────────────────────────────────────────── -->
 		<aside class="left-panel" style:width={`${leftPanelWidth}px`}>
+			{#if isFragment && fragmentMeta}
+				<div class="fragment-meta-bar">
+					<div class="fragment-meta-field">
+						<label for="fragment-name">Name</label>
+						<input
+							id="fragment-name"
+							type="text"
+							bind:value={fragmentMeta.name}
+							maxlength="120"
+							oninput={() => (isDirty = true)}
+						/>
+					</div>
+					<div class="fragment-meta-field fragment-meta-field-grow">
+						<label for="fragment-description">Description</label>
+						<input
+							id="fragment-description"
+							type="text"
+							bind:value={fragmentMeta.description}
+							maxlength="600"
+							placeholder="What this fragment is for"
+							oninput={() => (isDirty = true)}
+						/>
+					</div>
+				</div>
+			{:else}
 			<!-- Template + version pickers -->
 			<div class="picker-bar">
 				<div class="picker-row">
@@ -1901,6 +2146,7 @@
 					</div>
 				</div>
 			{/if}
+			{/if}
 
 			<!-- Tab bar -->
 			<div class="tab-bar">
@@ -2088,7 +2334,7 @@
 						class:saved={saveStatus === 'saved'}
 						class:save-error={saveStatus === 'error'}
 						onclick={handleSave}
-						disabled={saveStatus === 'saving' || saveVersionStatus === 'saving' || !selectedTemplateId}
+						disabled={saveStatus === 'saving' || saveVersionStatus === 'saving' || (!isFragment && !selectedTemplateId) || (isFragment && !fragmentMeta)}
 						title="Update the current template version in place"
 					>
 						{#if saveStatus === 'saving'}Saving…
@@ -2368,7 +2614,7 @@
 	onpersonaschange={handlePersonasChange}
 />
 
-{#if !isStandalone}
+{#if !isStandalone && !isFragment}
 <TemplateFieldsManager
 	open={templateFieldsManagerOpen}
 	campaignId={campaignId}
@@ -2510,6 +2756,51 @@
 		display: flex;
 		flex-direction: column;
 		overflow: hidden;
+	}
+
+	.fragment-load-error {
+		padding: 12px 16px;
+		font-size: 13px;
+		color: #b91c1c;
+		background: #fef2f2;
+		border-bottom: 1px solid #fecaca;
+	}
+
+	.fragment-meta-bar {
+		display: flex;
+		gap: 10px;
+		padding: 10px 16px;
+		border-bottom: 1px solid #f4f4f5;
+		background: #fafafe;
+		flex-shrink: 0;
+	}
+
+	.fragment-meta-field {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		min-width: 140px;
+	}
+
+	.fragment-meta-field-grow {
+		flex: 1;
+	}
+
+	.fragment-meta-field label {
+		font-size: 10px;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.4px;
+		color: #71717a;
+	}
+
+	.fragment-meta-field input {
+		font: inherit;
+		font-size: 12px;
+		padding: 6px 8px;
+		border: 1px solid #e4e4e7;
+		border-radius: 6px;
+		background: #fff;
 	}
 
 	/* ── Topbar ──────────────────────────────────────────────────────────────── */

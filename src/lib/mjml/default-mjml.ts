@@ -21,14 +21,10 @@ export const DEFAULT_TEMPLATE_MJML = `<mjml>
 </mjml>`;
 
 /** Starter MJML for new AJO expression fragments (compiled to HTML on sync). */
-export const DEFAULT_FRAGMENT_MJML = `<mjml>
-  <mj-body>
-    <mj-section>
-      <mj-column>
-        <mj-text align="center" font-size="12px" color="#71717a" line-height="1.5">
-          © {{profile.system.year}} Acme Corp. All rights reserved.
-        </mj-text>
-      </mj-column>
-    </mj-section>
-  </mj-body>
-</mjml>`;
+export const DEFAULT_FRAGMENT_MJML = `<mj-section>
+  <mj-column>
+    <mj-text align="center" font-size="12px" color="#71717a" line-height="1.5">
+      © {{profile.system.year}} Acme Corp. All rights reserved.
+    </mj-text>
+  </mj-column>
+</mj-section>`;
