@@ -71,7 +71,6 @@ export async function listTemplates(
 	const db = getDb(platform);
 	await ensureSeeded(db);
 	const rows = await listEmailTemplateRows(db);
-	if (rows.length === 0) return listBundledTemplateDefinitions();
 	return rows.map((row) => rowToStoredTemplateEntry(row).definition);
 }
 
@@ -81,15 +80,6 @@ export async function listTemplatePickerItems(
 	const db = getDb(platform);
 	await ensureSeeded(db);
 	const rows = await listEmailTemplateRows(db);
-	if (rows.length === 0) {
-		return listBundledTemplateDefinitions().map((t) => ({
-			id: t.id,
-			familyId: t.id,
-			name: t.name,
-			version: t.version,
-			isBuiltin: false
-		}));
-	}
 	return rows.map((row) => ({
 		id: row.id,
 		familyId: row.familyId,

@@ -23,7 +23,7 @@ export async function resolveCampaignTemplateId(
 	const stored = await getCampaignTemplatePref(db, scope, campaignId);
 	if (stored) return stored;
 
-	return inferredTemplateId || 'promo';
+	return inferredTemplateId || 'default';
 }
 
 export async function saveCampaignTemplatePreference(

@@ -1348,7 +1348,7 @@
 
 	const previewUrl = $derived.by(() => {
 		const params = new URLSearchParams({
-			templateId: selectedTemplateId || 'promo',
+			templateId: selectedTemplateId || 'default',
 			personaId: selectedPersonaId,
 			colorScheme: previewChrome,
 			t: String(iframeKey)
@@ -1932,19 +1932,22 @@
 									+ Insert field
 								</button>
 								{#if cfInsertMenuOpen}
-									<div class="cf-insert-menu" onclick={stopEventPropagation} onkeydown={stopEventPropagation}>
+									<ul class="cf-insert-menu" role="menu" onclick={stopEventPropagation} onkeydown={stopEventPropagation}>
 										{#each contentModelFields as field (field.name)}
-											<button
-												type="button"
-												class="cf-insert-item"
-												onmousedown={(e) => e.preventDefault()}
-												onclick={() => insertCfField(field)}
-											>
-												<span class="cf-insert-label">{field.label}</span>
-												<code class="cf-insert-token">{formatCfInsertToken(field)}</code>
-											</button>
+											<li role="none">
+												<button
+													type="button"
+													class="cf-insert-item"
+													role="menuitem"
+													onmousedown={(e) => e.preventDefault()}
+													onclick={() => insertCfField(field)}
+												>
+													<span class="cf-insert-label">{field.label}</span>
+													<code class="cf-insert-token">{formatCfInsertToken(field)}</code>
+												</button>
+											</li>
 										{/each}
-									</div>
+									</ul>
 								{/if}
 							</div>
 						{/if}
@@ -3221,12 +3224,6 @@
 		margin: 4px 0 0;
 	}
 
-	.persona-dialog-subtitle code {
-		font-family: 'SF Mono', 'Fira Code', monospace;
-		font-size: 11px;
-		color: #5b5bd6;
-	}
-
 	.persona-dialog-close {
 		width: 28px;
 		height: 28px;
@@ -3503,7 +3500,9 @@
 		max-width: 320px;
 		max-height: 240px;
 		overflow: auto;
+		margin: 0;
 		padding: 4px;
+		list-style: none;
 		border: 1px solid #e4e4e7;
 		border-radius: 8px;
 		background: #fff;
@@ -3804,17 +3803,6 @@
 		color: #71717a;
 	}
 
-	.preview-toolbar-divider {
-		width: 1px;
-		height: 20px;
-		background: #e4e4e7;
-		flex-shrink: 0;
-	}
-
-	.preview-chrome-dark .preview-toolbar-divider {
-		background: #3f3f46;
-	}
-
 	.preview-toolbar-spacer {
 		flex: 1;
 		min-width: 12px;
@@ -3925,31 +3913,6 @@
 
 	.preview-actions-item:hover {
 		background: #f4f4f5;
-	}
-
-	.preview-icon-btn {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		width: 26px;
-		height: 26px;
-		padding: 0;
-		flex-shrink: 0;
-		border: none;
-		border-radius: 6px;
-		background: transparent;
-		color: #a1a1aa;
-		cursor: pointer;
-	}
-
-	.preview-icon-btn:hover:not(:disabled) {
-		color: #52525b;
-		background: #f0f0f1;
-	}
-
-	.preview-chrome-dark .preview-icon-btn:hover:not(:disabled) {
-		color: #e4e4e7;
-		background: #3f3f46;
 	}
 
 	.preview-icon-toggle-group {

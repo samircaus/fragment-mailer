@@ -165,7 +165,7 @@ function inferLetModelId(
 	definition?: TemplateDefinition
 ): string | undefined {
 	if (definition?.fields[fieldName]?.modelId) return definition.fields[fieldName].modelId;
-	const tpl = templateId ?? definition?.id ?? 'offer';
+	const tpl = templateId ?? definition?.id ?? 'default';
 	const slug = (value: string) =>
 		value
 			.toLowerCase()

@@ -25,21 +25,21 @@ describe('campaign template preference', () => {
 		const stored = await getCampaignTemplatePref(undefined, scope, 'spring-promo');
 		expect(stored).toBe('gift-offer@1.0.0');
 
-		const resolved = await resolveCampaignTemplateId(undefined, 'spring-promo', 'promo');
+		const resolved = await resolveCampaignTemplateId(undefined, 'spring-promo', 'default');
 		expect(resolved).toBe('gift-offer@1.0.0');
 	});
 
 	it('prefers query param over stored preference', async () => {
 		await setCampaignTemplatePref(undefined, scope, 'spring-promo', 'gift-offer@1.0.0');
-		const resolved = await resolveCampaignTemplateId(undefined, 'spring-promo', 'promo', {
-			queryTemplateId: 'offer'
+		const resolved = await resolveCampaignTemplateId(undefined, 'spring-promo', 'default', {
+			queryTemplateId: 'cta-over-image'
 		});
-		expect(resolved).toBe('offer');
+		expect(resolved).toBe('cta-over-image');
 	});
 
 	it('falls back to inferred template', async () => {
-		const resolved = await resolveCampaignTemplateId(undefined, 'spring-promo', 'offer');
-		expect(resolved).toBe('offer');
+		const resolved = await resolveCampaignTemplateId(undefined, 'spring-promo', 'default');
+		expect(resolved).toBe('default');
 	});
 
 	it('saves via helper', async () => {
@@ -75,18 +75,18 @@ describe('template family management', () => {
 
 	it('renames seeded templates', async () => {
 		await listTemplatePickerItems(undefined);
-		const renamed = await renameTemplateFamily(undefined, 'promo', 'Promo Email');
+		const renamed = await renameTemplateFamily(undefined, 'default', 'Starter Email');
 		expect(renamed.error).toBeUndefined();
 		const items = await listTemplatePickerItems(undefined);
-		expect(items.find((t) => t.familyId === 'promo')?.name).toBe('Promo Email');
+		expect(items.find((t) => t.familyId === 'default')?.name).toBe('Starter Email');
 	});
 
 	it('deletes a seeded template family', async () => {
 		await listTemplatePickerItems(undefined);
-		const deleted = await deleteTemplateFamily(undefined, 'promo');
+		const deleted = await deleteTemplateFamily(undefined, 'default');
 		expect(deleted.error).toBeUndefined();
 		const items = await listTemplatePickerItems(undefined);
-		expect(items.some((t) => t.familyId === 'promo')).toBe(false);
+		expect(items.some((t) => t.familyId === 'default')).toBe(false);
 	});
 
 	it('deletes a custom template family', async () => {

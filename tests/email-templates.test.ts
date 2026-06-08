@@ -14,23 +14,23 @@ describe('template service (in-memory fallback)', () => {
 
 	it('seeds bundled templates on first list', async () => {
 		const templates = await listTemplates(undefined);
-		expect(templates.map((t) => t.id).sort()).toEqual(['offer', 'promo']);
+		expect(templates.map((t) => t.id)).toEqual(['default']);
 	});
 
-	it('loads bundled template with UE assets', async () => {
-		const result = await loadTemplate(undefined, 'promo');
-		expect(result.data?.definition.id).toBe('promo');
-		expect(result.data?.componentDefinition?.groups[0]?.id).toBe('email-campaign');
-		expect(result.data?.componentModels?.length).toBeGreaterThan(0);
+	it('loads bundled default template', async () => {
+		const result = await loadTemplate(undefined, 'default');
+		expect(result.data?.definition.id).toBe('default');
+		expect(result.data?.definition.name).toBe('Default Email');
+		expect(result.data?.mjml).toContain('{{cf.title}}');
 	});
 
 	it('persists MJML edits in memory store', async () => {
 		await listTemplates(undefined);
 		const updated = '<mjml><mj-body><mj-section><mj-column><mj-text>Edited</mj-text></mj-column></mj-section></mj-body></mjml>';
-		const saveResult = await saveTemplateMJML(undefined, 'promo', updated);
+		const saveResult = await saveTemplateMJML(undefined, 'default', updated);
 		expect(saveResult.error).toBeUndefined();
 
-		const loaded = await loadTemplate(undefined, 'promo');
+		const loaded = await loadTemplate(undefined, 'default');
 		expect(loaded.data?.mjml).toBe(updated);
 	});
 

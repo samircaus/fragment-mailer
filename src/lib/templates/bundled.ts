@@ -1,9 +1,5 @@
-import promoMJML from './files/promo.mjml?raw';
-import promoDefinition from './files/promo.template.json';
-import promoComponentDefinition from './files/promo.component-definition.json';
-import promoComponentModels from './files/promo.component-models.json';
-import offerMJML from './files/offer.mjml?raw';
-import offerDefinition from './files/offer.template.json';
+import defaultMJML from './files/default.mjml?raw';
+import defaultDefinition from './files/default.template.json';
 import type {
 	ComponentDefinitionDoc,
 	ComponentModelDoc,
@@ -14,16 +10,9 @@ import type {
 export interface BundledTemplateEntry extends StoredTemplateEntry {}
 
 export const BUNDLED_TEMPLATES: Record<string, BundledTemplateEntry> = {
-	promo: {
-		definition: promoDefinition as TemplateDefinition,
-		mjml: promoMJML,
-		componentDefinition: promoComponentDefinition as ComponentDefinitionDoc,
-		componentModels: promoComponentModels as ComponentModelDoc,
-		isBuiltin: false
-	},
-	offer: {
-		definition: offerDefinition as TemplateDefinition,
-		mjml: offerMJML,
+	default: {
+		definition: defaultDefinition as TemplateDefinition,
+		mjml: defaultMJML,
 		componentDefinition: null,
 		componentModels: null,
 		isBuiltin: false

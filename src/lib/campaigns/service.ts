@@ -231,21 +231,9 @@ function fragmentToCampaign(fragment: CFFragment, id: string): Campaign {
 }
 
 function inferTemplateId(
-	modelPath: string | undefined,
-	modelTitle: string | undefined,
-	fragmentLike: Record<string, unknown>
+	_modelPath: string | undefined,
+	_modelTitle: string | undefined,
+	_fragmentLike: Record<string, unknown>
 ): string {
-	const modelPathLower = modelPath?.toLowerCase() ?? '';
-	const modelTitleLower = modelTitle?.toLowerCase() ?? '';
-
-	if (modelPathLower.includes('/models/offer') || modelTitleLower === 'offer') {
-		return 'offer';
-	}
-
-	const hasOfferFields = 'emailCopy' in fragmentLike && 'bannerImage' in fragmentLike;
-	if (hasOfferFields) {
-		return 'offer';
-	}
-
-	return 'promo';
+	return 'default';
 }

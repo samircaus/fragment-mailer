@@ -1,8 +1,8 @@
 {
-  "id": "offer",
-  "name": "Offer Email",
+  "id": "default",
+  "name": "Default Email",
   "version": "1.0.0",
-  "cfModel": "Offer",
+  "cfModel": "",
   "fields": {},
   "profileTokens": [],
   "previewSize": { "width": 600, "height": 900 }

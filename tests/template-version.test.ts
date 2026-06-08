@@ -16,7 +16,7 @@ describe('template version helpers', () => {
 	});
 
 	it('builds versioned ids', () => {
-		expect(versionIdForFamily('promo', '1.0.1')).toBe('promo@1.0.1');
+		expect(versionIdForFamily('default', '1.0.1')).toBe('default@1.0.1');
 	});
 });
 
@@ -28,23 +28,23 @@ describe('saveTemplateAsNewVersion', () => {
 	it('creates a new row with bumped version', async () => {
 		await listTemplatePickerItems(undefined);
 		const updated = '<mjml><mj-body><mj-section><mj-column><mj-text>v2</mj-text></mj-column></mj-section></mj-body></mjml>';
-		const result = await saveTemplateAsNewVersion(undefined, 'promo', updated);
+		const result = await saveTemplateAsNewVersion(undefined, 'default', updated);
 		expect(result.error).toBeUndefined();
 		expect(result.data?.version).toBe('1.0.1');
-		expect(result.data?.id).toBe('promo@1.0.1');
+		expect(result.data?.id).toBe('default@1.0.1');
 
 		const items = await listTemplatePickerItems(undefined);
-		const promoVersions = items.filter((t) => t.familyId === 'promo');
-		expect(promoVersions.map((t) => t.version).sort()).toEqual(['1.0.0', '1.0.1']);
+		const defaultVersions = items.filter((t) => t.familyId === 'default');
+		expect(defaultVersions.map((t) => t.version).sort()).toEqual(['1.0.0', '1.0.1']);
 
-		await saveTemplateMJML(undefined, 'promo', '<mjml><mj-body></mj-body></mjml>');
-		const third = await saveTemplateAsNewVersion(undefined, 'promo@1.0.1', updated);
+		await saveTemplateMJML(undefined, 'default', '<mjml><mj-body></mj-body></mjml>');
+		const third = await saveTemplateAsNewVersion(undefined, 'default@1.0.1', updated);
 		expect(third.data?.version).toBe('1.0.2');
 	});
 
 	it('refuses to delete the only version of a template', async () => {
 		await listTemplatePickerItems(undefined);
-		expect((await deleteTemplateVersion(undefined, 'promo')).error).toContain('only version');
+		expect((await deleteTemplateVersion(undefined, 'default')).error).toContain('only version');
 
 		await createTemplate(undefined, {
 			id: 'solo',
@@ -56,10 +56,10 @@ describe('saveTemplateAsNewVersion', () => {
 
 	it('deletes a non-builtin extra version', async () => {
 		await listTemplatePickerItems(undefined);
-		await saveTemplateAsNewVersion(undefined, 'promo', '<mjml><mj-body></mj-body></mjml>');
-		const del = await deleteTemplateVersion(undefined, 'promo@1.0.1');
+		await saveTemplateAsNewVersion(undefined, 'default', '<mjml><mj-body></mj-body></mjml>');
+		const del = await deleteTemplateVersion(undefined, 'default@1.0.1');
 		expect(del.error).toBeUndefined();
 		const items = await listTemplatePickerItems(undefined);
-		expect(items.some((t) => t.id === 'promo@1.0.1')).toBe(false);
+		expect(items.some((t) => t.id === 'default@1.0.1')).toBe(false);
 	});
 });
