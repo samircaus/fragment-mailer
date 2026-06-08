@@ -83,7 +83,7 @@ function collectAssetUrls(
 		}
 
 		const nested = resolveNestedFragment(ref);
-		if (nested && isFragmentReferenceType(ref.type)) {
+		if (nested) {
 			collectAssetUrls(nested, `${prefix}.${ref.fieldName}`, env, out);
 		}
 	}

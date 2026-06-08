@@ -44,7 +44,7 @@ const mockCampaign: AuthorFragment = {
 };
 
 describe('transformTemplateForAjo', () => {
-	it('rewrites load tags and compiles HTML', async () => {
+	it('rewrites load tags and compiles HTML with a single cf fragment', async () => {
 		const mjml = `<mjml><mj-body>
 {% load cf as fragment ref='this' %}
 {% load featuredOffer as fragment ref='this.featuredOffer' %}
@@ -69,8 +69,13 @@ describe('transformTemplateForAjo', () => {
 
 		expect(result.validationErrors).toHaveLength(0);
 		expect(result.html).toContain('aem:aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee');
-		expect(result.html).toContain('aem:11111111-2222-3333-4444-555555555555');
+		expect(result.html).not.toContain('aem:11111111-2222-3333-4444-555555555555');
+		expect(result.html).toContain('{{ cf.featuredOffer.headline }}');
 		expect(result.html).not.toMatch(/\{%\s*load\b/);
+
+		const fragmentTags = result.html.match(/\{\{fragment id="aem:[^"]+" result="[^"]+"\}\}/g) ?? [];
+		expect(fragmentTags).toHaveLength(1);
+		expect(fragmentTags[0]).toContain('result="cf"');
 
 		const firstLet = result.html.indexOf('{{fragment id="aem:');
 		const firstCfToken = result.html.indexOf('{{ cf.heroHeadline }}');

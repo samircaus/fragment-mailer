@@ -163,12 +163,12 @@ describe('applyDynamicMediaImageUrls — AJO export', () => {
 	};
 
 	it('replaces image src personalization tokens with Dynamic Media URLs', () => {
-		const html = '<img src="{{heroOffer.bannerImage}}" alt="x" />';
+		const html = '<img src="{{cf.heroOffer.bannerImage}}" alt="x" />';
 		const loadTags = [
 			{
-				raw: "{% load heroOffer as fragment ref='cf.heroOffer' %}",
-				varName: 'heroOffer',
-				refExpression: 'cf.heroOffer',
+				raw: "{% load cf as fragment ref='this' %}",
+				varName: 'cf',
+				refExpression: 'this',
 				index: 0
 			}
 		];
@@ -180,12 +180,12 @@ describe('applyDynamicMediaImageUrls — AJO export', () => {
 	});
 
 	it('leaves tokens unchanged when dynamic media is disabled', () => {
-		const html = '<img src="{{heroOffer.bannerImage}}" />';
+		const html = '<img src="{{cf.heroOffer.bannerImage}}" />';
 		const loadTags = [
 			{
 				raw: '',
-				varName: 'heroOffer',
-				refExpression: 'cf.heroOffer',
+				varName: 'cf',
+				refExpression: 'this',
 				index: 0
 			}
 		];

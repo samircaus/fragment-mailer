@@ -7,7 +7,7 @@ import {
 	ensureLoadTagsInTemplate,
 	inferLoadTagSpecs,
 	isFragmentReferenceField,
-	rewriteLegacyCfReferencePaths
+	restoreCfReferencePaths
 } from '../src/lib/render/ajo-load-inject.js';
 import type { TemplateDefinition } from '../src/lib/templates/registry.js';
 
@@ -34,7 +34,7 @@ const offerDef = syncTemplateFromAemModel({
 }).definition;
 
 describe('inferLoadTagSpecs', () => {
-	it('infers cf + reference loads from promo-style cf.* usage', () => {
+	it('infers only cf load from promo-style cf.* usage (nested refs stay under cf)', () => {
 		const mjml = `
 <mj-body>
   {{ cf.heroHeadline }}
@@ -42,8 +42,7 @@ describe('inferLoadTagSpecs', () => {
 </mj-body>`;
 
 		const specs = inferLoadTagSpecs(mjml, promoDef);
-		expect(specs).toContainEqual({ varName: 'cf', refExpression: 'this' });
-		expect(specs).toContainEqual({ varName: 'featuredOffer', refExpression: 'this.featuredOffer' });
+		expect(specs).toEqual([{ varName: 'cf', refExpression: 'this' }]);
 	});
 
 	it('infers only cf for offer template scalar bindings', () => {
@@ -65,18 +64,17 @@ describe('inferLoadTagSpecs', () => {
 });
 
 describe('ensureLoadTagsInTemplate', () => {
-	it('injects load tags and rewrites cf.featuredOffer paths', () => {
+	it('injects only cf load tag and keeps cf.featuredOffer paths', () => {
 		const mjml = `<mjml><mj-body>
 {{ cf.heroHeadline }}
 {% if cf.featuredOffer.headline %}{{ cf.featuredOffer.headline }}{% endif %}
 </mj-body></mjml>`;
 
 		const { mjml: out, injected } = ensureLoadTagsInTemplate(mjml, promoDef);
-		expect(injected.map((s) => s.varName).sort()).toEqual(['cf', 'featuredOffer']);
+		expect(injected).toEqual([{ varName: 'cf', refExpression: 'this' }]);
 		expect(out).toContain("{% load cf as fragment ref='this' %}");
-		expect(out).toContain("{% load featuredOffer as fragment ref='this.featuredOffer' %}");
-		expect(out).toContain('{{ featuredOffer.headline }}');
-		expect(out).not.toContain('cf.featuredOffer');
+		expect(out).toContain('{{ cf.featuredOffer.headline }}');
+		expect(out).not.toMatch(/\{\{\s*featuredOffer\./);
 	});
 
 	it('does not duplicate existing load tags', () => {
@@ -89,10 +87,10 @@ describe('ensureLoadTagsInTemplate', () => {
 	});
 });
 
-describe('rewriteLegacyCfReferencePaths', () => {
-	it('rewrites nested reference paths only', () => {
-		const out = rewriteLegacyCfReferencePaths('{{ cf.featuredOffer.headline }}', ['featuredOffer']);
-		expect(out).toBe('{{ featuredOffer.headline }}');
-		expect(collectCfRootsUsedInTemplate(out)).not.toContain('featuredOffer');
+describe('restoreCfReferencePaths', () => {
+	it('restores cf prefix for legacy reference var paths', () => {
+		const out = restoreCfReferencePaths('{{ featuredOffer.headline }}', ['featuredOffer']);
+		expect(out).toBe('{{ cf.featuredOffer.headline }}');
+		expect(collectCfRootsUsedInTemplate(out)).toContain('featuredOffer');
 	});
 });

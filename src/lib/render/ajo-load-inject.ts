@@ -1,9 +1,8 @@
 // Infer and inject {% load varName as fragment ref='...' %} from template + campaign context.
 // Authors normally use {{ cf.field }} / {{ cf.offer.headline }}; export adds load tags automatically.
 
-import { isCfReferencePath } from '$lib/aem/hydrate-references.js';
 import type { TemplateDefinition, TemplateFieldDefinition } from '$lib/templates/registry.js';
-import type { AuthorField, AuthorFragment } from '$lib/types/aem.js';
+import type { AuthorFragment } from '$lib/types/aem.js';
 import { parseLetFragmentAliases } from '$lib/render/let-bindings.js';
 import { parseLoadTags, type ParsedLoadTag } from './ajo-load-tags.js';
 
@@ -30,7 +29,7 @@ function isImageLikeFieldName(name: string): boolean {
 	return /(?:^|_)(?:image|banner|photo|thumbnail)(?:$|_)/i.test(name);
 }
 
-function isAuthorFragmentReferenceField(field: AuthorField): boolean {
+function isAuthorFragmentReferenceField(field: { type: string }): boolean {
 	const type = field.type.toLowerCase();
 	if (type.includes('asset')) return false;
 	return type.includes('fragment') || type.includes('content-fragment');
@@ -80,50 +79,28 @@ export function inferLoadTagSpecs(
 	definition?: TemplateDefinition,
 	campaign?: AuthorFragment
 ): LoadTagSpec[] {
-	const referenceFields = collectReferenceFieldNames(definition, campaign);
 	const usedRoots = collectCfRootsUsedInTemplate(mjml);
 	const specs: LoadTagSpec[] = [];
 
-	const needsCampaignRoot = [...usedRoots].some((root) => !referenceFields.has(root));
-	if (needsCampaignRoot) {
-		specs.push({ varName: 'cf', refExpression: 'this' });
-	}
-
-	for (const refName of referenceFields) {
-		const usedInTemplate =
-			usedRoots.has(refName) ||
-			mjml.includes(`cf.${refName}.`) ||
-			new RegExp(`\\bcf\\.${refName}\\b`).test(mjml);
-		if (!usedInTemplate) continue;
-
-		const campaignField = campaign?.fields?.find((f) => f.name === refName);
-		if (campaignField && !isAuthorFragmentReferenceField(campaignField)) continue;
-		if (campaignField && fieldValueLooksLikeDamAsset(campaignField)) continue;
-
-		specs.push({ varName: refName, refExpression: `this.${refName}` });
-	}
-
-	// Any cf.* usage at all → at least bind the campaign CF.
-	if (specs.length === 0 && usedRoots.size > 0) {
+	if (usedRoots.size > 0) {
 		specs.push({ varName: 'cf', refExpression: 'this' });
 	}
 
 	return specs;
 }
 
-function fieldValueLooksLikeDamAsset(field: AuthorField): boolean {
-	const pick = field.values?.[0];
-	if (typeof pick === 'string') return !isCfReferencePath(pick);
-	return false;
-}
-
-/** Rewrite cf.featuredOffer.headline → featuredOffer.headline for loaded reference vars. */
-export function rewriteLegacyCfReferencePaths(mjml: string, referenceFields: Iterable<string>): string {
+/** Rewrite featuredOffer.headline → cf.featuredOffer.headline when dropping separate reference loads. */
+export function restoreCfReferencePaths(mjml: string, referenceFields: Iterable<string>): string {
 	let output = mjml;
 	for (const field of referenceFields) {
-		output = output.replace(new RegExp(`\\bcf\\.${field}(?=\\.)`, 'g'), field);
+		output = output.replace(new RegExp(`\\b${field}(?=\\.)`, 'g'), `cf.${field}`);
 	}
 	return output;
+}
+
+/** @deprecated Nested CF refs stay under cf.* in AJO — use restoreCfReferencePaths for legacy templates. */
+export function rewriteLegacyCfReferencePaths(mjml: string, referenceFields: Iterable<string>): string {
+	return restoreCfReferencePaths(mjml, referenceFields);
 }
 
 export function buildLoadTagLine(spec: LoadTagSpec): string {
@@ -149,7 +126,7 @@ export interface EnsureLoadTagsResult {
 }
 
 /**
- * Add missing {% load %} tags and rewrite legacy cf.<ref>. paths.
+ * Add missing {% load %} tags for the main campaign CF and {% let %} aliases.
  * Skips varNames that already have an explicit load tag.
  */
 export function ensureLoadTagsInTemplate(
@@ -159,7 +136,6 @@ export function ensureLoadTagsInTemplate(
 ): EnsureLoadTagsResult {
 	const existing = parseLoadTags(mjml);
 	const existingVars = new Set(existing.map((t) => t.varName));
-	const referenceFields = collectReferenceFieldNames(definition, campaign);
 
 	const inferred = inferLoadTagSpecs(mjml, definition, campaign).filter(
 		(spec) => !existingVars.has(spec.varName)
@@ -176,13 +152,6 @@ export function ensureLoadTagsInTemplate(
 			output,
 			inferred.map(buildLoadTagLine)
 		);
-	}
-
-	const refNamesToRewrite = [...referenceFields].filter((name) =>
-		inferred.some((s) => s.varName === name)
-	);
-	if (refNamesToRewrite.length > 0) {
-		output = rewriteLegacyCfReferencePaths(output, refNamesToRewrite);
 	}
 
 	return { mjml: output, injected: inferred, existing };

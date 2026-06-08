@@ -16,7 +16,7 @@ import {
 import { resolveLoadTagRefs } from '$lib/render/ajo-ref-resolver.js';
 import { applyDynamicMediaImageUrls } from '$lib/render/ajo-dynamic-media.js';
 import { normalizeAjoPersonalizationSyntax, wrapAjoControlTagsForMjml } from '$lib/render/ajo-export.js';
-import { ensureLoadTagsInTemplate } from '$lib/render/ajo-load-inject.js';
+import { ensureLoadTagsInTemplate, restoreCfReferencePaths } from '$lib/render/ajo-load-inject.js';
 import { stripLetStatements } from '$lib/render/let-bindings.js';
 import { applyPreviewFragments } from '$lib/fragments/preview.js';
 import type { TemplateDefinition } from '$lib/templates/registry.js';
@@ -95,18 +95,27 @@ export async function transformTemplateForAjo(input: AjoTransformInput): Promise
 		env
 	);
 
-	const letTags = loadTags.flatMap((tag) => {
+	const nestedCfRefLoads = loadTags.filter(isNestedCfReferenceLoad);
+	const activeLoadTags = loadTags.filter((tag) => !isNestedCfReferenceLoad(tag));
+
+	const letTags = activeLoadTags.flatMap((tag) => {
 		const match = resolved.find((r) => r.varName === tag.varName);
 		if (!match) return [];
 		return [buildLetFragmentTag(tag.varName, match.uuid, repoId)];
 	});
 
-	const transformedMjml = stripLetStatements(
+	let transformedMjml = stripLetStatements(
 		stripLoadTags(
 			preparedMjml,
 			loadTags.map((tag) => tag.raw)
 		)
 	);
+	if (nestedCfRefLoads.length > 0) {
+		transformedMjml = restoreCfReferencePaths(
+			transformedMjml,
+			nestedCfRefLoads.map((tag) => tag.varName)
+		);
+	}
 	const wrappedMjml = wrapAjoControlTagsForMjml(transformedMjml);
 	const compileResult = await compileMJML(wrappedMjml, { minify: false });
 	const html = applyDynamicMediaImageUrls(
@@ -114,7 +123,7 @@ export async function transformTemplateForAjo(input: AjoTransformInput): Promise
 			hoistLetFragmentTagsInHtml(compileResult.html ?? '', letTags)
 		),
 		campaign,
-		loadTags,
+		activeLoadTags,
 		env
 	);
 
@@ -197,4 +206,9 @@ async function loadCampaignFragment(
 
 	const r = await fetchAuthorFragmentRawByPath(path, authorOpts, env);
 	return r.data ?? null;
+}
+
+/** this.fieldName loads (not indexed) are nested CF refs — AJO resolves them via the main cf fragment. */
+function isNestedCfReferenceLoad(tag: ParsedLoadTag): boolean {
+	return tag.varName !== 'cf' && /^this\.[A-Za-z_]\w*$/.test(tag.refExpression);
 }

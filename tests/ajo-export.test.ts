@@ -10,7 +10,7 @@ import {
 } from '../src/lib/render/ajo-export.js';
 
 describe('rewriteCfRefsForAjo', () => {
-	it('rewrites primary and referenced cf paths to fragment vars', () => {
+	it('prepends a single cf fragment and keeps nested cf paths', () => {
 		const template = `
 <mjml>
   <mj-body>
@@ -32,11 +32,11 @@ describe('rewriteCfRefsForAjo', () => {
 			}
 		});
 
-		expect(result.mjml).toContain("{{fragment id='/content/dam/campaigns/welcome-series-1' result='cf0'}}");
-		expect(result.mjml).toContain("{{fragment id='/content/dam/offers/spring-sale' result='cf1'}}");
-		expect(result.mjml).toContain('{{ cf0.heroHeadline }}');
-		expect(result.mjml).toContain('{% if cf1.headline %}');
-		expect(result.mjml).toContain('{{ cf1.headline }}');
+		expect(result.mjml).toContain("{{fragment id='/content/dam/campaigns/welcome-series-1' result='cf'}}");
+		expect(result.mjml).not.toContain('spring-sale');
+		expect(result.mjml).toContain('{{ cf.heroHeadline }}');
+		expect(result.mjml).toContain('{% if cf.featuredOffer.headline %}');
+		expect(result.mjml).toContain('{{ cf.featuredOffer.headline }}');
 	});
 });
 
