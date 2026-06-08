@@ -20,6 +20,7 @@
 	let newTemplateName = $state('');
 	let newTemplateCreating = $state(false);
 	let newTemplateError = $state('');
+	let deletingTemplateId = $state('');
 
 	const newTemplateId = $derived(
 		newTemplateName
@@ -106,6 +107,29 @@
 		return template.emailStatus?.syncStatus
 			? displayStatusLabel(template.emailStatus.syncStatus)
 			: 'Draft';
+	}
+
+	async function deleteTemplate(template: StandaloneTemplate, e: MouseEvent) {
+		e.preventDefault();
+		e.stopPropagation();
+		if (deletingTemplateId) return;
+		if (!confirm(`Delete "${template.name}" and all its versions? This cannot be undone.`)) return;
+
+		deletingTemplateId = template.id;
+		try {
+			const res = await fetch(`/api/templates/families/${encodeURIComponent(template.id)}`, {
+				method: 'DELETE'
+			});
+			if (!res.ok) {
+				const data = (await res.json().catch(() => ({}))) as { message?: string };
+				throw new Error(data.message ?? `Delete failed (${res.status})`);
+			}
+			await loadTemplates();
+		} catch (err) {
+			loadError = err instanceof Error ? err.message : 'Failed to delete template';
+		} finally {
+			deletingTemplateId = '';
+		}
 	}
 </script>
 
@@ -197,7 +221,17 @@
 							{#if template.updatedAt}
 								<span class="date">{formatDate(template.updatedAt)}</span>
 							{/if}
-							<span class="card-arrow">Open →</span>
+							<div class="card-actions">
+								<button
+									type="button"
+									class="card-delete-btn"
+									disabled={deletingTemplateId === template.id}
+									onclick={(e) => deleteTemplate(template, e)}
+								>
+									{deletingTemplateId === template.id ? 'Deleting…' : 'Delete'}
+								</button>
+								<span class="card-arrow">Open →</span>
+							</div>
 						</div>
 					</a>
 				{/each}
@@ -486,6 +520,39 @@
 		align-items: center;
 		justify-content: space-between;
 		margin-top: 2px;
+	}
+
+	.card-actions {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+	}
+
+	.card-delete-btn {
+		font: inherit;
+		font-size: 11px;
+		font-weight: 600;
+		padding: 2px 8px;
+		border-radius: 4px;
+		border: 1px solid #fecaca;
+		background: #fff;
+		color: #b91c1c;
+		cursor: pointer;
+		opacity: 0;
+		transition: opacity 0.12s;
+	}
+
+	.card:hover .card-delete-btn {
+		opacity: 1;
+	}
+
+	.card-delete-btn:hover:not(:disabled) {
+		background: #fef2f2;
+	}
+
+	.card-delete-btn:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
 	}
 
 	.date {

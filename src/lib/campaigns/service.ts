@@ -4,6 +4,7 @@ import { resolveAuthorModel } from '$lib/aem/author.js';
 import { normalizeCfModelPath } from '$lib/aem/cf-model-scope.js';
 import { aemClientOptions, authorHostUrl, campaignsFolder, type AppEnv } from '$lib/aem/env.js';
 import { normalizeCF } from '$lib/aem/client.js';
+import { getCachedHydratedFragment, setCachedHydratedFragment } from '$lib/aem/campaign-cache.js';
 import { hydrateUnresolvedFragmentReferences } from '$lib/aem/hydrate-references.js';
 import type { CFFragment } from '$lib/aem/types.js';
 import type { ContentFragmentItem } from '$lib/aem/types.js';
@@ -36,14 +37,20 @@ export async function listCampaigns(env?: AppEnv): Promise<Result<CampaignSummar
 	return { data: listResult.data.map((item) => itemToSummary(item)) };
 }
 
+export interface CampaignLoadOptions {
+	/** When provided and matches cache, skips AEM refetch (even past TTL). */
+	cfVersion?: string;
+}
+
 export async function getCampaignWithCF(
 	id: string,
-	env?: AppEnv
+	env?: AppEnv,
+	options?: CampaignLoadOptions
 ): Promise<Result<{ campaign: Campaign; cf: ReturnType<typeof normalizeCF> }>> {
-	const fragmentResult = await fetchCampaignFragmentForId(id, env);
+	const fragmentResult = await loadHydratedCampaignFragment(id, env, options);
 	if (fragmentResult.error || !fragmentResult.data) return fragmentResult;
 
-	const hydrated = await hydrateUnresolvedFragmentReferences(fragmentResult.data, env);
+	const hydrated = fragmentResult.data;
 	const campaign = fragmentToCampaign(hydrated, id);
 	return { data: { campaign, cf: normalizeCF(hydrated, env) } };
 }
@@ -51,12 +58,13 @@ export async function getCampaignWithCF(
 export async function getCampaignContentModel(
 	id: string,
 	env?: AppEnv,
-	templateDefinition?: TemplateDefinition
+	templateDefinition?: TemplateDefinition,
+	options?: CampaignLoadOptions
 ): Promise<Result<CampaignContentModel>> {
-	const fragmentResult = await fetchCampaignFragmentForId(id, env);
+	const fragmentResult = await loadHydratedCampaignFragment(id, env, options);
 	if (fragmentResult.error || !fragmentResult.data) return fragmentResult;
 
-	const hydrated = await hydrateUnresolvedFragmentReferences(fragmentResult.data, env);
+	const hydrated = fragmentResult.data;
 	const modelPath = normalizeCfModelPath(hydrated._model._path);
 	const modelTitle = hydrated._model.title;
 	const modelKey = modelPath.split('/').filter(Boolean).pop() ?? modelTitle;
@@ -136,6 +144,22 @@ function resolveCampaignPath(id: string, env?: AppEnv): string {
 
 function isCampaignNotFoundError(message: string | undefined): boolean {
 	return Boolean(message?.includes('No CF found at path:'));
+}
+
+async function loadHydratedCampaignFragment(
+	id: string,
+	env?: AppEnv,
+	options?: CampaignLoadOptions
+): Promise<Result<CFFragment>> {
+	const cached = getCachedHydratedFragment(id, options?.cfVersion);
+	if (cached) return { data: cached };
+
+	const fragmentResult = await fetchCampaignFragmentForId(id, env);
+	if (fragmentResult.error || !fragmentResult.data) return fragmentResult;
+
+	const hydrated = await hydrateUnresolvedFragmentReferences(fragmentResult.data, env);
+	setCachedHydratedFragment(id, hydrated);
+	return { data: hydrated };
 }
 
 async function fetchCampaignFragmentForId(

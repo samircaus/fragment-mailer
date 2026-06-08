@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { onMount, tick } from 'svelte';
 	import {
@@ -36,6 +37,7 @@
 		id: string;
 		name: string;
 		templateId: string;
+		selectedTemplateId?: string;
 		cfPath: string;
 		cfUuid?: string;
 		status: string;
@@ -69,6 +71,7 @@
 	const isStandalone = $derived(mode === 'standalone');
 
 	let campaign = $state<Campaign | null>(null);
+	let cfVersion = $state('');
 	let standaloneEmailStatus = $state<EmailStatusInfo | undefined>();
 	let standaloneName = $state('');
 	let isLoading = $state(true);
@@ -87,6 +90,10 @@
 	let versionPickerOpen = $state(false);
 	let templateActionsOpen = $state(false);
 	let deleteVersionStatus = $state<'idle' | 'deleting' | 'error'>('idle');
+	let deleteFamilyStatus = $state<'idle' | 'deleting' | 'error'>('idle');
+	let renameFamilyStatus = $state<'idle' | 'renaming' | 'error'>('idle');
+	let renameTemplateName = $state('');
+	let showRenameForm = $state(false);
 
 	// Persona picker
 	let personas = $state<PersonaListItem[]>([]);
@@ -240,14 +247,15 @@
 			}
 		} else {
 			await Promise.all([loadCampaign(), loadTemplates(), loadPreviewContext()]);
-			if (campaign?.templateId) {
-				selectedTemplateId = resolveTemplateSelectionId(campaign.templateId, templates);
+			const preferredTemplateId = campaign?.selectedTemplateId ?? campaign?.templateId;
+			if (preferredTemplateId) {
+				selectedTemplateId = resolveTemplateSelectionId(preferredTemplateId, templates);
 			}
 		}
 	});
 
 	$effect(() => {
-		if (isStandalone || !campaignId) return;
+		if (isStandalone || !campaignId || !selectedTemplateId) return;
 		selectedTemplateId;
 		void loadContentModelFields();
 	});
@@ -308,6 +316,7 @@
 		const templateId = selectedTemplateId;
 		const personaId = selectedPersonaId;
 		const persona = selectedPersona;
+		const version = cfVersion;
 
 		if (tab !== 'html' || !id || !templateId || !mjml.trim()) {
 			return;
@@ -318,7 +327,7 @@
 
 		const timer = setTimeout(() => {
 			const requestId = ++htmlCompileRequestId;
-			void compileHtmlPreview(mjml, id, templateId, personaId, persona, requestId);
+			void compileHtmlPreview(mjml, id, templateId, personaId, persona, requestId, version);
 		}, 400);
 
 		return () => clearTimeout(timer);
@@ -330,8 +339,12 @@
 		try {
 			const res = await fetch(`/api/campaigns/${campaignId}`);
 			if (!res.ok) throw new Error(`${res.status}`);
-			const data = (await res.json()) as { campaign: Campaign };
+			const data = (await res.json()) as {
+				campaign: Campaign;
+				cf?: { version?: string };
+			};
 			campaign = data.campaign;
+			cfVersion = data.cf?.version ?? '';
 		} catch (err) {
 			console.error('Failed to load campaign:', err);
 		} finally {
@@ -418,7 +431,8 @@
 		templateId: string,
 		personaId: string,
 		persona: Persona | null | undefined,
-		requestId: number
+		requestId: number,
+		cachedCfVersion = ''
 	) {
 		try {
 			const res = isStandalone
@@ -439,7 +453,8 @@
 							campaignId: id,
 							templateId,
 							personaId,
-							persona: persona ?? undefined
+							persona: persona ?? undefined,
+							...(cachedCfVersion ? { cfVersion: cachedCfVersion } : {})
 						})
 					});
 
@@ -785,6 +800,7 @@
 						headers: { 'Content-Type': 'application/json' },
 						body: JSON.stringify({
 							push: true,
+							templateId: selectedTemplateId,
 							mjml: mjmlCode,
 							templateName: campaign?.name ?? campaignId,
 							ajoTemplateId
@@ -1076,17 +1092,109 @@
 		templateActionsOpen = false;
 	}
 
+	async function persistCampaignTemplateSelection(templateId: string) {
+		if (isStandalone || !campaignId || !templateId) return;
+		try {
+			await fetch(`/api/campaigns/${encodeURIComponent(campaignId)}/template-preference`, {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ templateId })
+			});
+			if (campaign) {
+				campaign = { ...campaign, selectedTemplateId: templateId };
+			}
+		} catch (err) {
+			console.error('Failed to persist template selection:', err);
+		}
+	}
+
+	function applyTemplateSelection(templateId: string) {
+		if (!templateId || selectedTemplateId === templateId) return;
+		selectedTemplateId = templateId;
+		isDirty = false;
+		iframeKey += 1;
+		void persistCampaignTemplateSelection(templateId);
+	}
+
 	function selectFamily(familyId: string) {
 		const versions = templates
 			.filter((t) => t.familyId === familyId)
 			.sort((a, b) => b.version.localeCompare(a.version, undefined, { numeric: true }));
-		if (versions[0]) selectedTemplateId = versions[0].id;
+		if (versions[0]) applyTemplateSelection(versions[0].id);
 		closeTemplatePickers();
 	}
 
 	function selectVersion(id: string) {
-		selectedTemplateId = id;
+		applyTemplateSelection(id);
 		closeTemplatePickers();
+	}
+
+	async function handleRenameFamily() {
+		if (!selectedFamilyId || !renameTemplateName.trim() || renameFamilyStatus === 'renaming') return;
+		const family = templateFamilies.find((f) => f.familyId === selectedFamilyId);
+		if (!family || selectedTemplate?.isBuiltin) return;
+
+		templateActionsOpen = false;
+		renameFamilyStatus = 'renaming';
+		try {
+			const res = await fetch(`/api/templates/families/${encodeURIComponent(selectedFamilyId)}`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ name: renameTemplateName.trim() })
+			});
+			if (!res.ok) {
+				const data = (await res.json().catch(() => ({}))) as { message?: string };
+				throw new Error(data.message ?? `${res.status}`);
+			}
+			await loadTemplates();
+			if (isStandalone) {
+				standaloneName = renameTemplateName.trim();
+			}
+			showRenameForm = false;
+			renameTemplateName = '';
+			renameFamilyStatus = 'idle';
+		} catch (err) {
+			console.error('Failed to rename template:', err);
+			renameFamilyStatus = 'error';
+			setTimeout(() => (renameFamilyStatus = 'idle'), 3000);
+		}
+	}
+
+	async function handleDeleteFamily() {
+		if (!selectedFamilyId || !canDeleteFamily || deleteFamilyStatus === 'deleting') return;
+		const family = templateFamilies.find((f) => f.familyId === selectedFamilyId);
+		if (!family) return;
+		if (!confirm(`Delete template "${family.name}" and all its versions? This cannot be undone.`)) {
+			return;
+		}
+
+		templateActionsOpen = false;
+		deleteFamilyStatus = 'deleting';
+		try {
+			const res = await fetch(`/api/templates/families/${encodeURIComponent(selectedFamilyId)}`, {
+				method: 'DELETE'
+			});
+			if (!res.ok) {
+				const data = (await res.json().catch(() => ({}))) as { message?: string };
+				throw new Error(data.message ?? `${res.status}`);
+			}
+			await loadTemplates();
+			if (isStandalone) {
+				await goto('/templates');
+				return;
+			}
+			const fallback =
+				templates.find((t) => t.familyId === campaign?.templateId)?.id ??
+				templates.find((t) => !t.isBuiltin)?.id ??
+				templates[0]?.id ??
+				'';
+			if (fallback) applyTemplateSelection(fallback);
+			deleteFamilyStatus = 'idle';
+		} catch (err) {
+			console.error('Failed to delete template:', err);
+			deleteFamilyStatus = 'error';
+			setTimeout(() => (deleteFamilyStatus = 'idle'), 3000);
+		}
 	}
 
 	function handleDropdownKeydown(
@@ -1167,6 +1275,12 @@
 	const canDeleteVersion = $derived(
 		Boolean(selectedTemplate && !selectedTemplate.isBuiltin && familyVersions.length > 1)
 	);
+
+	const canDeleteFamily = $derived(
+		Boolean(selectedTemplate && !selectedTemplate.isBuiltin && selectedFamilyId)
+	);
+
+	const canRenameFamily = $derived(Boolean(selectedTemplate && !selectedTemplate.isBuiltin));
 
 	const selectedPersona = $derived(personas.find((p) => p.id === selectedPersonaId) ?? null);
 
@@ -1663,6 +1777,21 @@
 										type="button"
 										class="dropdown-option dropdown-option-compact"
 										role="menuitem"
+										disabled={!canRenameFamily || renameFamilyStatus === 'renaming'}
+										onclick={() => {
+											templateActionsOpen = false;
+											showRenameForm = true;
+											renameTemplateName = selectedTemplate?.name ?? '';
+										}}
+									>
+										Rename template
+									</button>
+								</li>
+								<li role="none">
+									<button
+										type="button"
+										class="dropdown-option dropdown-option-compact"
+										role="menuitem"
 										disabled={saveVersionStatus === 'saving' || !selectedTemplateId}
 										onclick={handleSaveAsNewVersion}
 									>
@@ -1685,6 +1814,20 @@
 										{deleteVersionStatus === 'deleting' ? 'Deleting…' : 'Delete this version'}
 									</button>
 								</li>
+								<li role="none">
+									<button
+										type="button"
+										class="dropdown-option dropdown-option-compact dropdown-option-danger"
+										role="menuitem"
+										disabled={!canDeleteFamily || deleteFamilyStatus === 'deleting'}
+										title={canDeleteFamily
+											? 'Delete this template and all versions'
+											: 'Built-in templates cannot be deleted'}
+										onclick={handleDeleteFamily}
+									>
+										{deleteFamilyStatus === 'deleting' ? 'Deleting…' : 'Delete template'}
+									</button>
+								</li>
 							</ul>
 						{/if}
 					</div>
@@ -1701,6 +1844,35 @@
 					</button>
 				</div>
 			</div>
+
+			{#if showRenameForm}
+				<div class="new-form">
+					<input
+						class="new-form-input"
+						bind:value={renameTemplateName}
+						placeholder="Template name…"
+						onkeydown={(e) => e.key === 'Enter' && handleRenameFamily()}
+					/>
+					<div class="new-form-actions">
+						<button
+							class="btn-create"
+							onclick={handleRenameFamily}
+							disabled={!renameTemplateName.trim() || renameFamilyStatus === 'renaming'}
+						>
+							{renameFamilyStatus === 'renaming' ? 'Renaming…' : 'Rename'}
+						</button>
+						<button
+							class="btn-cancel"
+							onclick={() => {
+								showRenameForm = false;
+								renameTemplateName = '';
+							}}
+						>
+							Cancel
+						</button>
+					</div>
+				</div>
+			{/if}
 
 			<!-- New template inline form -->
 			{#if showNewForm}

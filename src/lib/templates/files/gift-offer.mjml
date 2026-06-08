@@ -1,0 +1,64 @@
+<mjml>
+  <mj-head>
+    <mj-preview>{{cf.title}}</mj-preview>
+    <mj-font name="Manrope" href="https://fonts.googleapis.com/css?family=Manrope"></mj-font>
+    <mj-attributes>
+      <mj-all font-family="Manrope, Helvetica, Arial, sans-serif"></mj-all>
+      <mj-text font-weight="400" font-size="14px" color="#ffffff" line-height="22px"></mj-text>
+      <mj-button
+        background-color="#77E375"
+        color="#0C170C"
+        border-radius="10px"
+        font-size="20px"
+        inner-padding="14px 28px"
+      />
+    </mj-attributes>
+    <mj-style>
+      .lc-text a { color: #77E375 !important; text-decoration: underline; }
+      .lc-shadow { border: 1px solid #1b301b !important; }
+      .lc-button td { border: 2px solid #636b63; border-style: dashed; }
+      .gift-accent {
+        background: radial-gradient(circle at 50% 30%, #1a3d1a 0%, #0C170C 70%) !important;
+        border-radius: 12px;
+      }
+    </mj-style>
+  </mj-head>
+  <mj-body background-color="#070e07">
+    <mj-section css-class="lc-shadow" border-radius="20px" background-color="#0C170C" padding="30px 40px">
+      <mj-column width="100%">
+        {% if cf.heroOffer.bannerImage %}
+        <mj-image
+          padding="0px"
+          width="180px"
+          src="{{{cf.heroOffer.bannerImage}}}"
+          alt="{{cf.heroOffer.title}}"
+        ></mj-image>
+        {% else %}
+        <mj-wrapper css-class="gift-accent" padding="24px">
+          <mj-spacer height="24px"></mj-spacer>
+        </mj-wrapper>
+        {% endif %}
+        <mj-spacer height="30px"></mj-spacer>
+        <mj-text color="#fff" padding="0px" align="center" font-size="28px" line-height="34px">{{cf.title}}</mj-text>
+        {% if cf.heroOffer.title %}
+        <mj-spacer height="12px"></mj-spacer>
+        <mj-text color="#B4B4B4" padding="0px" align="center" line-height="22px">{{cf.heroOffer.title}}</mj-text>
+        {% endif %}
+        <mj-spacer height="30px"></mj-spacer>
+        <mj-text color="#fff" css-class="lc-text" padding="0px" line-height="22px">
+          Hi {{profile.person.name.firstName}},
+        </mj-text>
+        <mj-spacer height="12px"></mj-spacer>
+        <mj-text color="#fff" css-class="lc-text" padding="0px" line-height="22px">
+          {{{cf.emailCopy}}}
+        </mj-text>
+        {% if cf.ctaLink %}
+        <mj-spacer height="30px"></mj-spacer>
+        <mj-button padding="0px" href="{{cf.ctaLink}}" css-class="lc-button">{{cf.ctaLabel}}</mj-button>
+        {% endif %}
+        <mj-spacer height="40px"></mj-spacer>
+        <mj-raw>{%#fragment id="brand-footer"%}{%/fragment%}</mj-raw>
+      </mj-column>
+    </mj-section>
+  </mj-body>
+</mjml>

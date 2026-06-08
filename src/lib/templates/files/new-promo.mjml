@@ -1,10 +1,10 @@
 <mjml>
   <mj-head>
     <mj-preview>{{cf.title}}</mj-preview>
-    <mj-font name="Roboto" href="https://fonts.googleapis.com/css?family=Montserrat:300,400,500"></mj-font>
+    <mj-font name="Roboto" href="https://fonts.googleapis.com/css?family=Montserrat:300,400,500,600"></mj-font>
     <mj-attributes>
       <mj-all font-family="Montserrat, Helvetica, Arial, sans-serif"></mj-all>
-      <mj-text font-weight="400" font-size="16px" color="#000000" line-height="24px"></mj-text>
+      <mj-text font-weight="400" font-size="16px" color="#333333" line-height="24px"></mj-text>
       <mj-section padding="0px"></mj-section>
       <mj-button
         background-color="#5FA91D"
@@ -17,55 +17,64 @@
       .card-gradient > table {
         background: linear-gradient(160deg, #5FA91D 0%, #3d7a12 55%, #1f4a08 100%) !important;
       }
+      .hero-banner > table > tbody > tr > td {
+        box-shadow: inset 0 0 0 2000px rgba(255, 255, 255, 0.55);
+      }
+      .hero-title {
+        text-shadow: 0 1px 3px rgba(255, 255, 255, 0.9);
+      }
     </mj-style>
   </mj-head>
   <mj-body background-color="#F2F2F2">
-    <mj-section padding="20px 20px 0 20px" background-color="#FFFFFF">
-      <mj-column>
-        <mj-text align="center" font-weight="300" padding="30px 40px 10px 40px" font-size="32px" line-height="40px" color="#5FA91D">{{cf.title}}</mj-text>
-      </mj-column>
-    </mj-section>
     {% if cf.heroOffer.title %}
-    <mj-section padding="10px 20px" background-color="#FFFFFF">
+    <mj-section padding="20px 20px 0 20px" background-color="#FFFFFF">
       <mj-column>
         <mj-divider width="30px" border-width="3px" border-color="#9B9B9B"></mj-divider>
       </mj-column>
     </mj-section>
-    <mj-section padding="0 20px 20px 20px" background-color="#FFFFFF">
+    <mj-section padding="10px 20px 0 20px" background-color="#FFFFFF">
       <mj-column width="80%">
-        <mj-text align="center" padding-top="10px" font-weight="500" padding="0px">{{cf.heroOffer.title}}</mj-text>
+        <mj-text align="center" font-weight="600" color="#2D2D2D" padding="0px">{{cf.heroOffer.title}}</mj-text>
       </mj-column>
     </mj-section>
     {% endif %}
-    {% if cf.heroOffer.bannerImage %}
-    <mj-section background-url="{{{cf.heroOffer.bannerImage}}}" background-size="cover" background-repeat="no-repeat">
-      <mj-column width="100%">
-        <mj-text align="center" padding="50px 40px 0 40px" font-weight="300" color="#FFFFFF">
+    <mj-section padding="20px 20px 0 20px" background-color="#FFFFFF">
+      <mj-column>
+        <mj-text padding="10px 40px 0 40px" font-weight="500" color="#2F3136">
           Hi {{profile.person.name.firstName}},
         </mj-text>
-        <mj-text align="center" padding="10px 40px 0 40px" font-weight="300" color="#FFFFFF">
+        <mj-text padding="10px 40px 20px 40px" font-weight="400" color="#444444">
           {{{cf.emailCopy}}}
         </mj-text>
+      </mj-column>
+    </mj-section>
+    {% if cf.heroOffer.bannerImage %}
+    <mj-section background-url="{{{cf.heroOffer.bannerImage}}}" background-size="cover" background-repeat="no-repeat" css-class="hero-banner">
+      <mj-column width="100%">
+        <mj-text
+          align="center"
+          css-class="hero-title"
+          padding="50px 40px 10px 40px"
+          font-weight="600"
+          font-size="32px"
+          line-height="40px"
+          color="#1A1A1A"
+        >{{cf.title}}</mj-text>
         {% if cf.ctaLink %}
-        <mj-button align="center" href="{{cf.ctaLink}}" padding-bottom="100px" padding-top="20px">{{cf.ctaLabel}}</mj-button>
+        <mj-button align="center" href="{{cf.ctaLink}}" padding-bottom="60px" padding-top="20px">{{cf.ctaLabel}}</mj-button>
         {% else %}
-        <mj-spacer height="100px" />
+        <mj-spacer height="60px" />
         {% endif %}
       </mj-column>
     </mj-section>
     {% else %}
     <mj-section css-class="card-gradient">
       <mj-column width="100%">
-        <mj-text align="center" padding="50px 40px 0 40px" font-weight="300" color="#FFFFFF">
-          Hi {{profile.person.name.firstName}},
-        </mj-text>
-        <mj-text align="center" padding="10px 40px 0 40px" font-weight="300" color="#FFFFFF">
-          {{{cf.emailCopy}}}
-        </mj-text>
+        <mj-text align="center" padding="50px 40px 10px 40px" font-weight="600" font-size="32px" line-height="40px" color="#FFFFFF">{{cf.title}}</mj-text>
         {% if cf.ctaLink %}
-        <mj-button align="center" href="{{cf.ctaLink}}" padding-bottom="100px" padding-top="20px">{{cf.ctaLabel}}</mj-button>
+        <mj-button align="center" href="{{cf.ctaLink}}" padding-bottom="60px" padding-top="20px">{{cf.ctaLabel}}</mj-button>
         {% else %}
-        <mj-spacer height="100px" />
+        <mj-spacer height="60px" />
         {% endif %}
       </mj-column>
     </mj-section>

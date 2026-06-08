@@ -5,6 +5,7 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { getCampaignWithCF } from '$lib/campaigns/service.js';
 import { resolveAppEnv } from '$lib/server/app-env.js';
+import { getCampaignTemplatePref } from '$lib/db/campaign-template-prefs.js';
 import { getDb, getEmailStatus, statusScopeFromEnv } from '$lib/db/email-status.js';
 import { rowToEmailStatusInfo } from '$lib/db/email-status-types.js';
 
@@ -26,9 +27,15 @@ export const GET: RequestHandler = async ({ params, platform }) => {
 		? await getEmailStatus(getDb(platform), scope, campaign.cfUuid)
 		: null;
 	const emailStatus = rowToEmailStatusInfo(statusRow, aemUpdatedAt);
+	const selectedTemplateId = await getCampaignTemplatePref(getDb(platform), scope, id);
 
 	return json({
-		campaign: { ...campaign, status: emailStatus.syncStatus, emailStatus },
+		campaign: {
+			...campaign,
+			selectedTemplateId: selectedTemplateId ?? undefined,
+			status: emailStatus.syncStatus,
+			emailStatus
+		},
 		cf
 	});
 };

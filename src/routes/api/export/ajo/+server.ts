@@ -8,6 +8,7 @@ import type { RequestHandler } from './$types';
 
 import { ajoSandboxName, type AppEnv } from '$lib/aem/env.js';
 import { getCampaignWithCF } from '$lib/campaigns/service.js';
+import { resolveCampaignTemplateId } from '$lib/campaigns/template-preference.js';
 import { loadTemplateForCampaign } from '$lib/templates/load-for-campaign.js';
 import { resolveAppEnv } from '$lib/server/app-env.js';
 import { transformTemplateForAjo } from '$lib/ajo/export-pipeline.js';
@@ -48,8 +49,9 @@ export const POST: RequestHandler = async ({ url, request, platform }) => {
 		undefined;
 
 	const mjml = typeof body.mjml === 'string' ? body.mjml : undefined;
+	const templateId = typeof body.templateId === 'string' ? body.templateId : undefined;
 
-	return runAjoExport(url, env, { push, templateName, ajoTemplateId, mjml }, platform);
+	return runAjoExport(url, env, { push, templateName, ajoTemplateId, mjml, templateId }, platform);
 };
 
 interface ExportOptions {
@@ -57,6 +59,7 @@ interface ExportOptions {
 	templateName?: string;
 	ajoTemplateId?: string;
 	mjml?: string;
+	templateId?: string;
 }
 
 async function runAjoExport(
@@ -78,9 +81,12 @@ async function runAjoExport(
 	}
 
 	const { campaign, cf } = campaignResult.data;
+	const resolvedTemplateId = await resolveCampaignTemplateId(platform, campaignId, campaign.templateId, {
+		queryTemplateId: opts.templateId ?? url.searchParams.get('templateId')
+	});
 	const templateResult = await loadTemplateForCampaign(
 		platform,
-		campaign.templateId,
+		resolvedTemplateId,
 		cf.modelPath,
 		env
 	);

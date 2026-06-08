@@ -289,6 +289,63 @@ export async function deleteEmailTemplate(db: DbLike | undefined, id: string): P
 	return (result.meta.changes ?? 0) > 0;
 }
 
+export async function deleteEmailTemplatesByFamily(
+	db: DbLike | undefined,
+	familyId: string
+): Promise<number> {
+	if (!db) {
+		let removed = 0;
+		for (const [id, row] of memoryStore) {
+			if (row.familyId === familyId) {
+				memoryStore.delete(id);
+				removed += 1;
+			}
+		}
+		return removed;
+	}
+
+	const result = await db
+		.prepare('DELETE FROM email_templates WHERE family_id = ?')
+		.bind(familyId)
+		.run();
+	return result.meta.changes ?? 0;
+}
+
+export async function renameEmailTemplateFamily(
+	db: DbLike | undefined,
+	familyId: string,
+	name: string
+): Promise<number> {
+	const rows = await listEmailTemplateRowsByFamily(db, familyId);
+	if (rows.length === 0) return 0;
+
+	const now = new Date().toISOString();
+	let updated = 0;
+
+	for (const row of rows) {
+		const definition = parseJson<TemplateDefinition>(row.definitionJson);
+		if (!definition) continue;
+
+		const nextDefinition: TemplateDefinition = { ...definition, name };
+		const ok = await updateEmailTemplate(db, {
+			id: row.id,
+			name,
+			definition: nextDefinition
+		});
+		if (ok) updated += 1;
+	}
+
+	if (!db && updated > 0) {
+		for (const row of memoryStore.values()) {
+			if (row.familyId === familyId) {
+				row.updatedAt = now;
+			}
+		}
+	}
+
+	return updated;
+}
+
 export function clearEmailTemplatesMemoryStore(): void {
 	memoryStore.clear();
 }

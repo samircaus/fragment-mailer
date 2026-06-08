@@ -21,7 +21,9 @@ const CompileRequestSchema = z.object({
 	campaignId: z.string(),
 	templateId: z.string(),
 	personaId: z.string().optional(),
-	persona: z.unknown().optional()
+	persona: z.unknown().optional(),
+	/** AEM cq:lastModified — skips refetch when it matches the server cache. */
+	cfVersion: z.string().optional()
 });
 
 export const POST: RequestHandler = async ({ request, platform }) => {
@@ -39,9 +41,9 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 		throw error(400, `Invalid request: ${parsed.error.message}`);
 	}
 
-	const { mjml, campaignId, templateId, personaId, persona } = parsed.data;
+	const { mjml, campaignId, templateId, personaId, persona, cfVersion } = parsed.data;
 
-	const campaignResult = await getCampaignWithCF(campaignId, env);
+	const campaignResult = await getCampaignWithCF(campaignId, env, { cfVersion });
 	if (campaignResult.error || !campaignResult.data) {
 		const message = campaignResult.error ?? 'Campaign not found';
 		const status = message.includes('not found') ? 404 : 502;
@@ -71,7 +73,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 	const instrumentedMJML = instrumentCFOutputTokens(mjmlWithFragments);
 	const { html: resolvedMJML, warnings } = resolve(instrumentedMJML, context);
 
-	const compileResult = await compileMJML(resolvedMJML, { beautify: true });
+	const compileResult = await compileMJML(resolvedMJML);
 	if (!compileResult.html) {
 		return json(
 			{

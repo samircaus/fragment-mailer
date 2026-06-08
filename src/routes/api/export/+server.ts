@@ -20,6 +20,7 @@ import { flattenPersona } from '$lib/personas/validate.js';
 import { getPersonaById } from '$lib/personas/service.js';
 import { buildManifest } from '$lib/manifest/builder.js';
 import { getCampaignWithCF } from '$lib/campaigns/service.js';
+import { resolveCampaignTemplateId } from '$lib/campaigns/template-preference.js';
 
 export const GET: RequestHandler = async ({ url, platform }) => {
 	const env = resolveAppEnv(platform?.env) as AppEnv | undefined;
@@ -40,13 +41,11 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 	}
 
 	const { campaign, cf: primaryCF } = campaignResult.data;
+	const templateId = await resolveCampaignTemplateId(platform, campaignId, campaign.templateId, {
+		queryTemplateId: url.searchParams.get('templateId')
+	});
 
-	const templateResult = await loadTemplateForCampaign(
-		platform,
-		campaign.templateId,
-		primaryCF.modelPath,
-		env
-	);
+	const templateResult = await loadTemplateForCampaign(platform, templateId, primaryCF.modelPath, env);
 	if (templateResult.error) {
 		throw error(404, templateResult.error);
 	}

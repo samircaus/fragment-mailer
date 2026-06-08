@@ -28,6 +28,7 @@ import {
 } from '$lib/preview/envelope.js';
 import { applyPreviewFragments } from '$lib/fragments/preview.js';
 import { getCampaignWithCF } from '$lib/campaigns/service.js';
+import { resolveCampaignTemplateId } from '$lib/campaigns/template-preference.js';
 import { aemAssetBaseUrl } from '$lib/aem/env.js';
 import { buildRenderCfContext } from '$lib/render/cf-context.js';
 import { resolveAppEnv } from '$lib/server/app-env.js';
@@ -49,7 +50,9 @@ export const GET: RequestHandler = async ({ params, url, platform, locals }) => 
 	}
 
 	const { campaign, cf } = campaignResult.data;
-	const templateId = url.searchParams.get('templateId') ?? campaign.templateId ?? 'promo';
+	const templateId = await resolveCampaignTemplateId(platform, campaignId, campaign.templateId, {
+		queryTemplateId: url.searchParams.get('templateId')
+	});
 
 	const templateResult = await loadTemplateForCampaign(
 		platform,

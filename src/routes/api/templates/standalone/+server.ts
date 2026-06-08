@@ -21,18 +21,31 @@ export const GET: RequestHandler = async ({ platform }) => {
 	const rows = await listEmailTemplateRows(db);
 	const updatedAtById = new Map(rows.map((row) => [row.id, row.updatedAt]));
 
+	const latestByFamily = new Map<string, (typeof templates)[number]>();
+	for (const template of templates) {
+		const existing = latestByFamily.get(template.familyId);
+		if (
+			!existing ||
+			template.version.localeCompare(existing.version, undefined, { numeric: true }) > 0
+		) {
+			latestByFamily.set(template.familyId, template);
+		}
+	}
+
 	const withStatus = await Promise.all(
-		templates.map(async (template) => {
-			const cfUuid = standaloneTemplateCfUuid(template.id);
+		[...latestByFamily.values()].map(async (template) => {
+			const cfUuid = standaloneTemplateCfUuid(template.familyId);
 			const row = await getEmailStatus(db, scope, cfUuid);
-			const updatedAt = updatedAtById.get(template.id) ?? row?.updatedAt ?? new Date().toISOString();
+			const updatedAt =
+				updatedAtById.get(template.id) ?? row?.updatedAt ?? new Date().toISOString();
 			return {
 				...template,
+				id: template.familyId,
 				updatedAt,
 				emailStatus: rowToEmailStatusInfo(row, updatedAt)
 			};
 		})
 	);
 
-	return json({ templates: withStatus });
+	return json({ templates: withStatus.sort((a, b) => a.name.localeCompare(b.name)) });
 };

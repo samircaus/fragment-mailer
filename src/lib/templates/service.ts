@@ -1,12 +1,15 @@
 import { getDb } from '$lib/db/email-status.js';
+import { clearCampaignTemplatePrefsMemoryStore } from '$lib/db/campaign-template-prefs.js';
 import { clearEmailTemplatesMemoryStore } from '$lib/db/email-templates.js';
 import {
 	countEmailTemplates,
 	deleteEmailTemplate,
+	deleteEmailTemplatesByFamily,
 	getEmailTemplateRow,
 	insertEmailTemplate,
 	listEmailTemplateRows,
 	listEmailTemplateRowsByFamily,
+	renameEmailTemplateFamily,
 	rowToStoredTemplateEntry,
 	updateEmailTemplate,
 	type TemplateDbLike
@@ -104,6 +107,46 @@ export async function listStandaloneTemplatePickerItems(
 		(item) =>
 			!item.isBuiltin && (item.id.startsWith('ajo-') || item.familyId.startsWith('ajo-'))
 	);
+}
+
+export async function renameTemplateFamily(
+	platform: App.Platform | undefined,
+	familyId: string,
+	name: string
+): Promise<TemplateResult<void>> {
+	const trimmed = name.trim();
+	if (!trimmed) return { error: 'Template name is required' };
+
+	const db = getDb(platform);
+	await ensureSeeded(db);
+
+	const siblings = await listEmailTemplateRowsByFamily(db, familyId);
+	if (siblings.length === 0) return { error: `Template family "${familyId}" not found` };
+	if (siblings.some((row) => row.isBuiltin)) {
+		return { error: 'Built-in templates cannot be renamed' };
+	}
+
+	const updated = await renameEmailTemplateFamily(db, familyId, trimmed);
+	if (updated === 0) return { error: `Template family "${familyId}" not found` };
+	return { data: undefined };
+}
+
+export async function deleteTemplateFamily(
+	platform: App.Platform | undefined,
+	familyId: string
+): Promise<TemplateResult<void>> {
+	const db = getDb(platform);
+	await ensureSeeded(db);
+
+	const siblings = await listEmailTemplateRowsByFamily(db, familyId);
+	if (siblings.length === 0) return { error: `Template family "${familyId}" not found` };
+	if (siblings.some((row) => row.isBuiltin)) {
+		return { error: 'Built-in templates cannot be deleted' };
+	}
+
+	const removed = await deleteEmailTemplatesByFamily(db, familyId);
+	if (removed === 0) return { error: `Template family "${familyId}" not found` };
+	return { data: undefined };
 }
 
 export async function deleteTemplateVersion(
@@ -284,6 +327,7 @@ export async function updateTemplate(
 export function resetTemplateStoreForTests(): void {
 	seeded = false;
 	clearEmailTemplatesMemoryStore();
+	clearCampaignTemplatePrefsMemoryStore();
 }
 
 export { getDb };
