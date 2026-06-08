@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+	ajoExperienceCloudFragmentUrl,
 	ajoExperienceCloudTemplateUrl,
 	authorRepoHost,
 	appCanvasHost,
@@ -45,6 +46,23 @@ describe('ajoExperienceCloudTemplateUrl', () => {
 		expect(ajoExperienceCloudTemplateUrl('', AUTHOR)).toBeNull();
 		expect(ajoExperienceCloudTemplateUrl(TEMPLATE_ID, '')).toBeNull();
 		expect(ajoExperienceCloudTemplateUrl('bad/id', AUTHOR)).toBeNull();
+	});
+});
+
+describe('ajoExperienceCloudFragmentUrl', () => {
+	const FRAGMENT_ID = '9a7e48d5-41d9-48b6-b0de-2037370cfc65';
+	const PUBLICATION_ID = 'd62b9928-ae6a-4481-8e17-b7f44f5af977';
+
+	it('builds Experience Cloud AJO fragment publication link', () => {
+		expect(ajoExperienceCloudFragmentUrl(FRAGMENT_ID, PUBLICATION_ID, AUTHOR, 'psc', 'prod')).toBe(
+			'https://experience.adobe.com/?repo=author-p125048-e1847106.adobeaemcloud.com#/@psc/sname:prod/journey-optimizer/fragments/9a7e48d5-41d9-48b6-b0de-2037370cfc65/publications/d62b9928-ae6a-4481-8e17-b7f44f5af977'
+		);
+	});
+
+	it('returns null without ids or author host', () => {
+		expect(ajoExperienceCloudFragmentUrl('', PUBLICATION_ID, AUTHOR)).toBeNull();
+		expect(ajoExperienceCloudFragmentUrl(FRAGMENT_ID, '', AUTHOR)).toBeNull();
+		expect(ajoExperienceCloudFragmentUrl(FRAGMENT_ID, PUBLICATION_ID, '')).toBeNull();
 	});
 });
 

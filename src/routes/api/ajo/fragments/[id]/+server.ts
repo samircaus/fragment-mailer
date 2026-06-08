@@ -9,6 +9,7 @@ import {
 	createFragment,
 	getFragment,
 	getFragmentReferences,
+	getLiveFragmentPublicationId,
 	publishFragment,
 	updateFragment
 } from '$lib/ajo/fragments-client.js';
@@ -23,6 +24,7 @@ import {
 import { getDb } from '$lib/db/email-status.js';
 import { compileFragmentMjmlToHtml } from '$lib/fragments/compile-mjml.js';
 import type { AppEnv } from '$lib/aem/env.js';
+import type { AjoFragmentStatus } from '$lib/ajo/fragment-types.js';
 
 async function ajoExpressionFromMjml(mjml: string, env: AppEnv): Promise<string> {
 	const compiled = await compileFragmentMjmlToHtml(mjml, env);
@@ -30,6 +32,16 @@ async function ajoExpressionFromMjml(mjml: string, env: AppEnv): Promise<string>
 		throw error(422, compiled.error);
 	}
 	return compiled.html;
+}
+
+async function resolveFragmentPublicationId(
+	fragmentId: string,
+	status: AjoFragmentStatus,
+	env: AppEnv
+): Promise<string | undefined> {
+	if (status !== 'PUBLISHED') return undefined;
+	const live = await getLiveFragmentPublicationId(fragmentId, env);
+	return live.data;
 }
 
 function ajoErrorDetail(raw: string, fallback: string): string {
@@ -98,7 +110,8 @@ export const GET: RequestHandler = async ({ params, platform }) => {
 		return json({
 			fragment: fragmentResult.data,
 			references: referencesResult.data ?? { count: 0, items: [] },
-			isLocalDraft: false
+			isLocalDraft: false,
+			publicationId: await resolveFragmentPublicationId(params.id, fragmentResult.data.status, env)
 		});
 	} catch (e) {
 		if (e && typeof e === 'object' && 'status' in e) throw e;
@@ -168,6 +181,7 @@ export const PUT: RequestHandler = async ({ params, request, platform }) => {
 			}
 
 			let published = false;
+			let publicationId: string | undefined;
 			if (parsed.data.publish !== false) {
 				const publishResult = await publishFragment(created.data.id, env);
 				if (publishResult.error) {
@@ -176,6 +190,7 @@ export const PUT: RequestHandler = async ({ params, request, platform }) => {
 					throw error(status, publishResult.error);
 				}
 				published = true;
+				publicationId = publishResult.data?.publicationId;
 			}
 
 			await upsertAjoFragment(db, {
@@ -187,7 +202,8 @@ export const PUT: RequestHandler = async ({ params, request, platform }) => {
 			return json({
 				ok: true,
 				published,
-				newFragmentId: created.data.id
+				newFragmentId: created.data.id,
+				publicationId
 			});
 		}
 
@@ -218,6 +234,7 @@ export const PUT: RequestHandler = async ({ params, request, platform }) => {
 		}
 
 		let published = false;
+		let publicationId: string | undefined;
 		if (parsed.data.publish !== false) {
 			const publishResult = await publishFragment(params.id, env);
 			if (publishResult.error) {
@@ -225,12 +242,13 @@ export const PUT: RequestHandler = async ({ params, request, platform }) => {
 				throw error(status, publishResult.error);
 			}
 			published = true;
+			publicationId = publishResult.data?.publicationId;
 		}
 
 		const savedName = parsed.data.name ?? existing.data.name;
 		await upsertAjoFragment(db, { id: params.id, name: savedName }).catch(() => undefined);
 
-		return json({ ok: true, published });
+		return json({ ok: true, published, publicationId });
 	} catch (e) {
 		if (e && typeof e === 'object' && 'status' in e) throw e;
 		console.error(

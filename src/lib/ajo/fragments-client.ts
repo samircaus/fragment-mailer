@@ -471,17 +471,50 @@ export async function publishFragment(
 	const client = await buildClientOptions(env);
 	if (client.error || !client.data) return { error: client.error!, status: client.status };
 
-	return requestJson<AjoFragmentPublishResult>(
-		'POST',
-		`${FRAGMENTS_PATH}/publications`,
-		client.data,
-		env,
-		{
-			accept: AJO_FRAGMENT_CONTENT_TYPE,
-			contentType: AJO_FRAGMENT_PUBLICATION_CONTENT_TYPE,
-			body: { fragmentId }
+	const baseUrl = client.data.baseUrl ?? DEFAULT_BASE_URL;
+	const url = `${baseUrl}${FRAGMENTS_PATH}/publications`;
+
+	let res: Response;
+	try {
+		res = await fetch(url, {
+			method: 'POST',
+			headers: {
+				Authorization: `Bearer ${client.data.accessToken}`,
+				'x-api-key': client.data.apiKey,
+				'x-gw-ims-org-id': client.data.imsOrg,
+				'x-sandbox-name': client.data.sandboxName,
+				'Content-Type': AJO_FRAGMENT_PUBLICATION_CONTENT_TYPE
+			},
+			body: JSON.stringify({ fragmentId })
+		});
+	} catch (e) {
+		const errMsg = e instanceof Error ? e.message : String(e);
+		return { error: `AJO POST network error: ${errMsg}`, status: 502 };
+	}
+
+	if (!res.ok) {
+		const body = await res.text();
+		return { error: `AJO POST failed ${res.status}: ${body}`, status: res.status };
+	}
+
+	let publicationId =
+		res.headers.get('x-resource-id')?.trim() ||
+		(res.headers.get('location') && publicationIdFromLocation(res.headers.get('location')!)) ||
+		undefined;
+
+	if (!publicationId && (res.status === 202 || res.headers.get('content-type')?.includes('json'))) {
+		const parsed = await parseJsonResponseBody<Record<string, unknown>>(res, 'POST');
+		if (!parsed.error && parsed.data) {
+			publicationId = publicationIdFromRecord(parsed.data);
 		}
-	);
+	}
+
+	if (!publicationId) {
+		const live = await getLiveFragmentPublicationId(fragmentId, env);
+		publicationId = live.data;
+	}
+
+	return { data: { accepted: true, publicationId } };
 }
 
 export async function getFragmentReferences(
@@ -540,6 +573,65 @@ export async function getLiveFragmentExpression(
 	fragmentId: string,
 	env: AppEnv
 ): Promise<Result<string>> {
+	const live = await getLiveFragmentDetail(fragmentId, env);
+	if (live.error || !live.data) return live as Result<string>;
+	if (!live.data.expression) {
+		return { error: 'Live fragment has no expression content', status: 404 };
+	}
+	return { data: live.data.expression };
+}
+
+export async function getLiveFragmentPublicationId(
+	fragmentId: string,
+	env: AppEnv
+): Promise<Result<string>> {
+	const live = await getLiveFragmentDetail(fragmentId, env);
+	if (live.error || !live.data?.publicationId) {
+		return {
+			error: live.error ?? 'Live fragment publication id not found',
+			status: live.status ?? 404
+		};
+	}
+	return { data: live.data.publicationId };
+}
+
+function publicationIdFromLocation(location: string): string | undefined {
+	const trimmed = location.trim();
+	if (!trimmed) return undefined;
+	try {
+		const pathname = new URL(trimmed, DEFAULT_BASE_URL).pathname;
+		const match = pathname.match(/\/publications\/([^/?#]+)/i);
+		return match?.[1] && UUID_RE.test(match[1]) ? decodeURIComponent(match[1]) : undefined;
+	} catch {
+		const match = trimmed.match(/\/publications\/([^/?#]+)/i);
+		return match?.[1] && UUID_RE.test(match[1]) ? decodeURIComponent(match[1]) : undefined;
+	}
+}
+
+function publicationIdFromRecord(raw: Record<string, unknown>): string | undefined {
+	for (const key of ['id', 'publicationId', 'publicationRequestId']) {
+		const val = raw[key];
+		if (typeof val === 'string' && UUID_RE.test(val)) return val;
+	}
+
+	const links = raw._links;
+	if (links && typeof links === 'object' && links !== null && 'self' in links) {
+		const href = (links as { self?: { href?: string } }).self?.href;
+		if (href) {
+			const match = href.match(/\/publications\/([^/?#]+)/i);
+			if (match?.[1] && UUID_RE.test(match[1])) return match[1];
+		}
+	}
+
+	return undefined;
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export async function getLiveFragmentDetail(
+	fragmentId: string,
+	env: AppEnv
+): Promise<Result<{ expression?: string; publicationId?: string }>> {
 	const client = await buildClientOptions(env);
 	if (client.error || !client.data) return { error: client.error!, status: client.status };
 
@@ -551,14 +643,18 @@ export async function getLiveFragmentExpression(
 		env,
 		{ accept: 'application/vnd.adobe.ajo.fragment.publication.v1.0+json' }
 	);
-	if (result.error || !result.data) return result as Result<string>;
+	if (result.error || !result.data) return result as Result<{ expression?: string; publicationId?: string }>;
 
-	const fragment = result.data.fragment;
+	const raw = result.data;
+	const fragment = raw.fragment;
+	let expression: string | undefined;
 	if (fragment && typeof fragment === 'object' && fragment !== null) {
 		const expr = (fragment as Record<string, unknown>).expression;
-		if (typeof expr === 'string') return { data: expr };
+		if (typeof expr === 'string') expression = expr;
 	}
-	return { error: 'Live fragment has no expression content', status: 404 };
+
+	const publicationId = publicationIdFromRecord(raw);
+	return { data: { expression, publicationId } };
 }
 
 /** Resolve fragment content by AJO id or display name (e.g. brand-footer). */

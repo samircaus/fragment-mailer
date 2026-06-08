@@ -63,6 +63,7 @@ export interface AjoFragmentReferences {
 
 export interface AjoFragmentPublishResult {
 	accepted: boolean;
+	publicationId?: string;
 }
 
 export function buildAjoExpressionFragmentPayload(opts: {

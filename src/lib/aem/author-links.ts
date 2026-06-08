@@ -6,6 +6,10 @@ const DEFAULT_EXP_TENANT = 'psc';
 /** AJO content template ids from the Platform API (path segment safe). */
 const AJO_TEMPLATE_ID_RE = /^[^/?#\s]+$/;
 
+/** AJO fragment and publication ids (UUID). */
+const AJO_FRAGMENT_ID_RE =
+	/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /** Hostname (and port) for UE canvas paths — no protocol. */
 export function appCanvasHost(originOrHost: string): string {
 	const trimmed = originOrHost.trim();
@@ -69,6 +73,31 @@ export function ajoExperienceCloudTemplateUrl(
 	const sandbox = sandboxName.trim() || 'prod';
 
 	return `https://experience.adobe.com/?repo=${encodeURIComponent(repo)}#/@${encodeURIComponent(tenant)}/sname:${encodeURIComponent(sandbox)}/journey-optimizer/content-templates/details/${encodeURIComponent(id)}/email`;
+}
+
+/**
+ * AJO Journey Optimizer expression fragment in Experience Cloud.
+ * Example:
+ *   https://experience.adobe.com/?repo=author-p125048-e1847106.adobeaemcloud.com#/@psc/sname:prod/journey-optimizer/fragments/{fragmentId}/publications/{publicationId}
+ */
+export function ajoExperienceCloudFragmentUrl(
+	fragmentId: string,
+	publicationId: string,
+	authorBaseUrl: string | null | undefined,
+	tenantSlug: string = DEFAULT_EXP_TENANT,
+	sandboxName: string = 'prod'
+): string | null {
+	if (!fragmentId?.trim() || !publicationId?.trim() || !authorBaseUrl?.trim()) return null;
+
+	const fragId = fragmentId.trim();
+	const pubId = publicationId.trim();
+	if (!AJO_FRAGMENT_ID_RE.test(fragId) || !AJO_FRAGMENT_ID_RE.test(pubId)) return null;
+
+	const repo = authorRepoHost(authorBaseUrl);
+	const tenant = tenantSlug.trim() || DEFAULT_EXP_TENANT;
+	const sandbox = sandboxName.trim() || 'prod';
+
+	return `https://experience.adobe.com/?repo=${encodeURIComponent(repo)}#/@${encodeURIComponent(tenant)}/sname:${encodeURIComponent(sandbox)}/journey-optimizer/fragments/${encodeURIComponent(fragId)}/publications/${encodeURIComponent(pubId)}`;
 }
 
 /**

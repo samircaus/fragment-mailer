@@ -4,6 +4,7 @@
 	import { onMount, tick } from 'svelte';
 	import {
 		ajoExperienceCloudTemplateUrl,
+		ajoExperienceCloudFragmentUrl,
 		cfExperienceCloudEditorUrl,
 		universalEditorCanvasUrl
 	} from '$lib/aem/author-links.js';
@@ -84,6 +85,7 @@
 	let standaloneName = $state('');
 	let fragmentMeta = $state<AjoExpressionFragmentDetail | null>(null);
 	let fragmentEtag = $state<string | undefined>();
+	let fragmentPublicationId = $state<string | undefined>();
 	let isLocalFragmentDraft = $state(false);
 	let fragmentLoadError = $state('');
 	let isLoading = $state(true);
@@ -419,12 +421,14 @@
 			const data = (await res.json()) as {
 				fragment: AjoExpressionFragmentDetail;
 				isLocalDraft?: boolean;
+				publicationId?: string;
 			};
 			fragmentMeta = {
 				...data.fragment,
 				description: data.fragment.description ?? ''
 			};
 			isLocalFragmentDraft = Boolean(data.isLocalDraft);
+			fragmentPublicationId = data.publicationId;
 			const expression = data.fragment.fragment?.expression ?? '';
 			mjmlCode = isMjmlFragmentSource(expression)
 				? unwrapFragmentMjmlForEdit(expression)
@@ -724,9 +728,13 @@
 			const data = (await res.json().catch(() => ({}))) as {
 				message?: string;
 				newFragmentId?: string;
+				publicationId?: string;
 			};
 			if (!res.ok) {
 				throw new Error(data.message ?? `Publish failed: ${res.status}`);
+			}
+			if (data.publicationId) {
+				fragmentPublicationId = data.publicationId;
 			}
 			if (data.newFragmentId) {
 				await goto(`/fragments/${encodeURIComponent(data.newFragmentId)}`);
@@ -1496,6 +1504,17 @@
 		return ajoExperienceCloudTemplateUrl(remoteId, aemAuthorUrl, cfEditorTenant, ajoSandbox);
 	});
 
+	const ajoFragmentUrl = $derived.by(() => {
+		if (!isFragment || isLocalFragmentDraft || !fragmentPublicationId || !aemAuthorUrl) return null;
+		return ajoExperienceCloudFragmentUrl(
+			fragmentId,
+			fragmentPublicationId,
+			aemAuthorUrl,
+			cfEditorTenant,
+			ajoSandbox
+		);
+	});
+
 	const editorTitle = $derived(
 		isFragment
 			? (fragmentMeta?.name ?? fragmentId)
@@ -1669,6 +1688,26 @@
 		{#if isFragment}
 			<div class="ajo-group">
 				<div class="ajo-push-group">
+					{#if ajoFragmentUrl}
+						<a
+							href={ajoFragmentUrl}
+							target="_blank"
+							rel="noopener noreferrer"
+							class="open-cf-link"
+							title="Open this fragment in Journey Optimizer (Experience Cloud)"
+						>
+							<svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+								<path
+									d="M9 2h3v3M12 2 7 7M5 2H3a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V9"
+									stroke="currentColor"
+									stroke-width="1.25"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+								/>
+							</svg>
+							Open in AJO
+						</a>
+					{/if}
 					<span
 						class="sync-chip {fragmentStatusClass(fragmentMeta?.status)}"
 						title={fragmentStatusLabel(fragmentMeta?.status)}
