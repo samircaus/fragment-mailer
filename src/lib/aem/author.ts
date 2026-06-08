@@ -63,7 +63,7 @@ export async function fetchAuthorFragmentById(
 ): Promise<Result<CFFragment>> {
 	const raw = await fetchAuthorFragmentRawById(id, opts, env);
 	if (raw.error || !raw.data) return raw;
-	return { data: authorFragmentToCFFragment(raw.data) };
+	return { data: authorFragmentToCFFragment(raw.data, env) };
 }
 
 /** Fetch raw Author API fragment (for AJO export ref resolution). */
@@ -132,7 +132,7 @@ export async function fetchAuthorFragmentByPath(
 
 	const hydrated = await fetchAuthorFragmentRawById(raw.data.id, opts, env);
 	const fragment = hydrated.data ?? raw.data;
-	return { data: authorFragmentToCFFragment(fragment) };
+	return { data: authorFragmentToCFFragment(fragment, env) };
 }
 
 export async function listAuthorModels(

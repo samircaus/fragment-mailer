@@ -14,6 +14,7 @@ import {
 	type ParsedLoadTag
 } from '$lib/render/ajo-load-tags.js';
 import { resolveLoadTagRefs } from '$lib/render/ajo-ref-resolver.js';
+import { applyDynamicMediaImageUrls } from '$lib/render/ajo-dynamic-media.js';
 import { normalizeAjoPersonalizationSyntax, wrapAjoControlTagsForMjml } from '$lib/render/ajo-export.js';
 import { ensureLoadTagsInTemplate } from '$lib/render/ajo-load-inject.js';
 import { stripLetStatements } from '$lib/render/let-bindings.js';
@@ -108,8 +109,13 @@ export async function transformTemplateForAjo(input: AjoTransformInput): Promise
 	);
 	const wrappedMjml = wrapAjoControlTagsForMjml(transformedMjml);
 	const compileResult = await compileMJML(wrappedMjml, { minify: false });
-	const html = normalizeAjoPersonalizationSyntax(
-		hoistLetFragmentTagsInHtml(compileResult.html ?? '', letTags)
+	const html = applyDynamicMediaImageUrls(
+		normalizeAjoPersonalizationSyntax(
+			hoistLetFragmentTagsInHtml(compileResult.html ?? '', letTags)
+		),
+		campaign,
+		loadTags,
+		env
 	);
 
 	const validationErrors = await validateAjoExport(

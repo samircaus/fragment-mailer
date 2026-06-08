@@ -3,6 +3,7 @@
 //   GET /adobe/contentFragments?path=...
 //   GET /adobe/contentFragments/{id}?references=all-hydrated
 
+import type { AppEnv } from './env.js';
 import { normalizeFragmentFields } from './normalize-fields.js';
 import { DELIVERY_CF_REFERENCES } from './reference-fetch.js';
 import type {
@@ -146,7 +147,7 @@ export async function fetchCF(path: string, opts: AEMClientOptions): Promise<Res
 }
 
 // Normalize a raw CF response into a consistent internal shape.
-export function normalizeCF(fragment: CFFragment): ResolvedCFData {
+export function normalizeCF(fragment: CFFragment, env?: AppEnv): ResolvedCFData {
 	const { _path, _model, _metadata, ...fields } = fragment;
 
 	const version =
@@ -159,7 +160,7 @@ export function normalizeCF(fragment: CFFragment): ResolvedCFData {
 		}
 	}
 
-	const cleanFields = normalizeFragmentFields(rawFields);
+	const cleanFields = normalizeFragmentFields(rawFields, env);
 
 	return {
 		path: _path,

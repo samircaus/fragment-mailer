@@ -46,6 +46,8 @@ interface Env {
 	AJO_IMS_SCOPES: string;
 	AEM_AUTHOR_HOST: string;
 	AEM_PUBLISH_HOST: string;
+	USE_DYNAMIC_MEDIA: string;
+	AEM_DELIVERY_HOST: string;
 	AEM_CF_EDITOR_TENANT: string;
 	APP_AUTH_SECRET: string;
 	CF_ACCESS_TEAM_DOMAIN: string;

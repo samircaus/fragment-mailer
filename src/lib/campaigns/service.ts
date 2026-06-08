@@ -45,7 +45,7 @@ export async function getCampaignWithCF(
 
 	const hydrated = await hydrateUnresolvedFragmentReferences(fragmentResult.data, env);
 	const campaign = fragmentToCampaign(hydrated, id);
-	return { data: { campaign, cf: normalizeCF(hydrated) } };
+	return { data: { campaign, cf: normalizeCF(hydrated, env) } };
 }
 
 export async function getCampaignContentModel(
@@ -60,7 +60,7 @@ export async function getCampaignContentModel(
 	const modelPath = normalizeCfModelPath(hydrated._model._path);
 	const modelTitle = hydrated._model.title;
 	const modelKey = modelPath.split('/').filter(Boolean).pop() ?? modelTitle;
-	const normalized = normalizeCF(hydrated);
+	const normalized = normalizeCF(hydrated, env);
 
 	const authorBase = authorHostUrl(env);
 	const authorOpts = authorBase ? aemClientOptions({ ...env, AEM_BASE_URL: authorBase }) : null;

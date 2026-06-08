@@ -47,6 +47,10 @@ export interface AppEnv {
 	AJO_SANDBOX?: string;
 	/** Experience Cloud hash tenant for CF editor links (URL segment after #/@). Default: psc */
 	AEM_CF_EDITOR_TENANT?: string;
+	/** When true, image fields resolve to AEM Assets Delivery (Dynamic Media) URLs. */
+	USE_DYNAMIC_MEDIA?: string;
+	/** Delivery API host for Dynamic Media URLs (hostname or https URL). Derived from publish host when unset. */
+	AEM_DELIVERY_HOST?: string;
 	/** Bearer secret for API auth (automation / complement to Cloudflare Access) */
 	APP_AUTH_SECRET?: string;
 	/** Cloudflare Access team domain, e.g. myteam.cloudflareaccess.com */
@@ -176,6 +180,29 @@ export function publishHostRepoId(env?: AppEnv): string {
 
 export function ajoSandboxName(env?: AppEnv): string {
 	return env?.AJO_SANDBOX_NAME?.trim() || env?.AJO_SANDBOX?.trim() || 'prod';
+}
+
+export function useDynamicMedia(env?: AppEnv): boolean {
+	const raw = env?.USE_DYNAMIC_MEDIA?.trim().toLowerCase();
+	return raw === 'true' || raw === '1' || raw === 'yes';
+}
+
+/** Hostname for AEM Assets Delivery API (delivery-p…), used in Dynamic Media image URLs. */
+export function deliveryHostFromEnv(env?: AppEnv): string {
+	const explicit = env?.AEM_DELIVERY_HOST?.trim();
+	if (explicit) return stripUrlToHostname(explicit);
+
+	const publishHost = publishHostRepoId(env);
+	if (publishHost && /^publish[-.]/i.test(publishHost)) {
+		return publishHost.replace(/^publish/i, 'delivery');
+	}
+
+	const baseHost = stripUrlToHostname(env?.AEM_BASE_URL?.trim() ?? '');
+	if (baseHost && /^publish[-.]/i.test(baseHost)) {
+		return baseHost.replace(/^publish/i, 'delivery');
+	}
+
+	return '';
 }
 
 /** AJO Platform API key — dedicated AJO_IMS_* or same S2S app as AEM Author. */

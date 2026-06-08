@@ -1,5 +1,8 @@
 // Recursively normalize AEM CF field values for template rendering (nested refs + assets).
 
+import { resolveAssetImageUrl } from './dynamic-media.js';
+import type { AppEnv } from './env.js';
+
 function isImageFieldName(name: string): boolean {
 	return /(?:^|_)(?:image|banner|photo|thumbnail)(?:$|_)/i.test(name);
 }
@@ -8,8 +11,9 @@ function isRichTextFieldName(name: string): boolean {
 	return /(?:copy|body|html|richtext|description)/i.test(name);
 }
 
-function resolveAssetUrl(image: Record<string, unknown>): string | undefined {
+function resolveAssetUrl(image: Record<string, unknown>, env?: AppEnv): string | undefined {
 	return (
+		resolveAssetImageUrl(image, env) ||
 		(typeof image._publishUrl === 'string' && image._publishUrl) ||
 		(typeof image._dynamicUrl === 'string' && image._dynamicUrl) ||
 		(typeof image._path === 'string' && image._path) ||
@@ -51,14 +55,14 @@ function stripFragmentMeta(obj: Record<string, unknown>): Record<string, unknown
 	return out;
 }
 
-function normalizeFieldValue(value: unknown, fieldName: string): unknown {
+function normalizeFieldValue(value: unknown, fieldName: string, env?: AppEnv): unknown {
 	if (value === null || value === undefined) return value;
 	if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
 		return value;
 	}
 
 	if (Array.isArray(value)) {
-		return value.map((item) => normalizeFieldValue(item, fieldName));
+		return value.map((item) => normalizeFieldValue(item, fieldName, env));
 	}
 
 	if (typeof value !== 'object') return value;
@@ -66,7 +70,7 @@ function normalizeFieldValue(value: unknown, fieldName: string): unknown {
 	const obj = value as Record<string, unknown>;
 
 	if (isAssetShape(obj) || isImageFieldName(fieldName)) {
-		const url = resolveAssetUrl(obj);
+		const url = resolveAssetUrl(obj, env);
 		if (url) return url;
 	}
 
@@ -77,19 +81,22 @@ function normalizeFieldValue(value: unknown, fieldName: string): unknown {
 	}
 
 	if (isContentFragmentShape(obj)) {
-		return normalizeFragmentFields(stripFragmentMeta(obj));
+		return normalizeFragmentFields(stripFragmentMeta(obj), env);
 	}
 
 	const nested: Record<string, unknown> = {};
 	for (const [key, child] of Object.entries(obj)) {
 		if (key.startsWith('_')) continue;
-		nested[key] = normalizeFieldValue(child, key);
+		nested[key] = normalizeFieldValue(child, key, env);
 	}
 	return nested;
 }
 
 /** Normalize top-level and nested CF fields for {{ cf.* }} rendering. */
-export function normalizeFragmentFields(fields: Record<string, unknown>): Record<string, unknown> {
+export function normalizeFragmentFields(
+	fields: Record<string, unknown>,
+	env?: AppEnv
+): Record<string, unknown> {
 	const out: Record<string, unknown> = {};
 
 	for (const [key, value] of Object.entries(fields)) {
@@ -100,7 +107,7 @@ export function normalizeFragmentFields(fields: Record<string, unknown>): Record
 		if (key.startsWith('_') || key === 'id' || key.endsWith('Html') || key.endsWith('Url')) {
 			continue;
 		}
-		const normalized = normalizeFieldValue(value, key);
+		const normalized = normalizeFieldValue(value, key, env);
 		if (
 			key !== '_path' &&
 			normalized !== null &&

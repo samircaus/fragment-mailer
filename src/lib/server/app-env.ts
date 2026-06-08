@@ -26,6 +26,8 @@ export function resolveAppEnv(platform?: AppEnv): AppEnv | undefined {
 		IMS_SCOPES: pick('IMS_SCOPES', platform),
 		AEM_AUTHOR_HOST: pick('AEM_AUTHOR_HOST', platform),
 		AEM_PUBLISH_HOST: pick('AEM_PUBLISH_HOST', platform),
+		USE_DYNAMIC_MEDIA: pick('USE_DYNAMIC_MEDIA', platform),
+		AEM_DELIVERY_HOST: pick('AEM_DELIVERY_HOST', platform),
 		AEM_CF_EDITOR_TENANT: pick('AEM_CF_EDITOR_TENANT', platform),
 		AJO_SANDBOX: pick('AJO_SANDBOX', platform),
 		AJO_SANDBOX_NAME: pick('AJO_SANDBOX_NAME', platform),
