@@ -12,6 +12,7 @@
 	import PreviewProfilesManager from '$lib/components/PreviewProfilesManager.svelte';
 	import TemplateFieldsManager from '$lib/components/TemplateFieldsManager.svelte';
 	import type { CfInsertField } from '$lib/templates/cf-insert.js';
+	import { PROFILE_INSERT_FIELDS } from '$lib/templates/profile-insert.js';
 	import { displayStatusHint, displayStatusLabel } from '$lib/db/attach-email-status.js';
 	import type { EmailStatusInfo } from '$lib/db/email-status-types.js';
 	import MjmlCodeEditor from '$lib/components/MjmlCodeEditor.svelte';
@@ -399,14 +400,18 @@
 		return type === 'asset' || type === 'image' || type === 'richtext' || type === 'html';
 	}
 
-	function formatCfInsertToken(field: CfInsertField): string {
-		const unescaped = /asset|image|richtext|html/i.test(field.type);
-		return unescaped ? `{{{${field.token}}}}` : `{{${field.token}}}`;
+	const profileInsertFields = PROFILE_INSERT_FIELDS;
+	const showInsertFieldMenu = $derived(
+		profileInsertFields.length > 0 || contentModelFields.length > 0
+	);
+
+	function formatInsertToken(token: string, type: string): string {
+		const unescaped = /asset|image|richtext|html/i.test(type);
+		return unescaped ? `{{{${token}}}}` : `{{${token}}}`;
 	}
 
-	async function insertCfField(field: CfInsertField) {
+	async function insertEditorField(snippet: string) {
 		cfInsertMenuOpen = false;
-		const snippet = field.snippet;
 		if (activeTab === 'code' && mjmlEditor) {
 			await mjmlEditor.insertAtCursor(snippet);
 		} else {
@@ -1919,7 +1924,7 @@
 			<div class="panel-content">
 				{#if activeTab === 'code'}
 					<div class="editor-wrap">
-						{#if !isStandalone && contentModelFields.length > 0}
+						{#if showInsertFieldMenu}
 							<div class="cf-insert-wrap">
 								<button
 									type="button"
@@ -1935,20 +1940,52 @@
 								</button>
 								{#if cfInsertMenuOpen}
 									<ul class="cf-insert-menu" role="menu" onclick={stopEventPropagation} onkeydown={stopEventPropagation}>
-										{#each contentModelFields as field (field.name)}
-											<li role="none">
-												<button
-													type="button"
-													class="cf-insert-item"
-													role="menuitem"
-													onmousedown={(e) => e.preventDefault()}
-													onclick={() => insertCfField(field)}
-												>
-													<span class="cf-insert-label">{field.label}</span>
-													<code class="cf-insert-token">{formatCfInsertToken(field)}</code>
-												</button>
+										{#if profileInsertFields.length > 0}
+											<li class="cf-insert-section" role="presentation">
+												<span class="cf-insert-section-label">Profile</span>
+												<span class="cf-insert-section-hint">AJO personalization</span>
 											</li>
-										{/each}
+											{#each profileInsertFields as field (field.token)}
+												<li role="none">
+													<button
+														type="button"
+														class="cf-insert-item cf-insert-item--profile"
+														role="menuitem"
+														onmousedown={(e) => e.preventDefault()}
+														onclick={() => insertEditorField(field.snippet)}
+													>
+														<span class="cf-insert-row">
+															<span class="cf-insert-label">{field.label}</span>
+															<span class="cf-insert-badge cf-insert-badge--profile">Profile</span>
+														</span>
+														<code class="cf-insert-token">{formatInsertToken(field.token, field.type)}</code>
+													</button>
+												</li>
+											{/each}
+										{/if}
+										{#if contentModelFields.length > 0}
+											<li class="cf-insert-section" role="presentation">
+												<span class="cf-insert-section-label">Content Fragment</span>
+												<span class="cf-insert-section-hint">AEM campaign fields</span>
+											</li>
+											{#each contentModelFields as field (field.name)}
+												<li role="none">
+													<button
+														type="button"
+														class="cf-insert-item cf-insert-item--cf"
+														role="menuitem"
+														onmousedown={(e) => e.preventDefault()}
+														onclick={() => insertEditorField(field.snippet)}
+													>
+														<span class="cf-insert-row">
+															<span class="cf-insert-label">{field.label}</span>
+															<span class="cf-insert-badge cf-insert-badge--cf">CF</span>
+														</span>
+														<code class="cf-insert-token">{formatInsertToken(field.token, field.type)}</code>
+													</button>
+												</li>
+											{/each}
+										{/if}
 									</ul>
 								{/if}
 							</div>
@@ -3568,9 +3605,9 @@
 		position: absolute;
 		right: 0;
 		top: calc(100% + 6px);
-		min-width: 220px;
-		max-width: 320px;
-		max-height: 240px;
+		min-width: 240px;
+		max-width: 340px;
+		max-height: 320px;
 		overflow: auto;
 		margin: 0;
 		padding: 4px;
@@ -3579,6 +3616,33 @@
 		border-radius: 8px;
 		background: #fff;
 		box-shadow: 0 8px 24px rgb(0 0 0 / 0.12);
+	}
+
+	.cf-insert-section {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 8px;
+		padding: 8px 8px 4px;
+	}
+
+	.cf-insert-section + .cf-insert-section {
+		margin-top: 4px;
+		border-top: 1px solid #f4f4f5;
+		padding-top: 10px;
+	}
+
+	.cf-insert-section-label {
+		font-size: 10px;
+		font-weight: 600;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+		color: #71717a;
+	}
+
+	.cf-insert-section-hint {
+		font-size: 10px;
+		color: #a1a1aa;
 	}
 
 	.cf-insert-item {
@@ -3593,16 +3657,61 @@
 		background: transparent;
 		text-align: left;
 		cursor: pointer;
+		border-left: 2px solid transparent;
 	}
 
 	.cf-insert-item:hover {
 		background: #f4f4f5;
 	}
 
+	.cf-insert-item--profile {
+		border-left-color: #0d9488;
+	}
+
+	.cf-insert-item--profile:hover {
+		background: #f0fdfa;
+	}
+
+	.cf-insert-item--cf {
+		border-left-color: #6366f1;
+	}
+
+	.cf-insert-item--cf:hover {
+		background: #eef2ff;
+	}
+
+	.cf-insert-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
+		width: 100%;
+	}
+
 	.cf-insert-label {
 		font-size: 12px;
 		font-weight: 500;
 		color: #18181b;
+	}
+
+	.cf-insert-badge {
+		flex-shrink: 0;
+		padding: 1px 5px;
+		border-radius: 4px;
+		font-size: 9px;
+		font-weight: 600;
+		letter-spacing: 0.03em;
+		text-transform: uppercase;
+	}
+
+	.cf-insert-badge--profile {
+		color: #0f766e;
+		background: #ccfbf1;
+	}
+
+	.cf-insert-badge--cf {
+		color: #4338ca;
+		background: #e0e7ff;
 	}
 
 	.cf-insert-token {

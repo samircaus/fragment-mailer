@@ -52,7 +52,8 @@
 		"IMS_ORG_ID": "CDA11DC661266AB70A495F8B@AdobeOrg",
 		"IMS_HOST": "ims-na1.adobelogin.com",
 		"IMS_SCOPES": "openid,AdobeID,aem.folders,aem.assets.author,aem.fragments.management",
-		"AJO_SANDBOX": "prod"
+		"AJO_SANDBOX": "prod",
+		"USE_DYNAMIC_MEDIA": "true"
 	}
 	/**
 	 * Service Bindings (communicate between multiple Workers)
