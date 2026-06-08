@@ -4,18 +4,14 @@ import promoComponentDefinition from './files/promo.component-definition.json';
 import promoComponentModels from './files/promo.component-models.json';
 import offerMJML from './files/offer.mjml?raw';
 import offerDefinition from './files/offer.template.json';
-import offerComponentDefinition from './files/offer.component-definition.json';
-import offerComponentModels from './files/offer.component-models.json';
 import type {
 	ComponentDefinitionDoc,
 	ComponentModelDoc,
-	TemplateDefinition,
-	TemplateEntry
+	StoredTemplateEntry,
+	TemplateDefinition
 } from './types.js';
 
-export interface BundledTemplateEntry extends TemplateEntry {
-	componentDefinition: ComponentDefinitionDoc;
-	componentModels: ComponentModelDoc;
+export interface BundledTemplateEntry extends StoredTemplateEntry {
 	isBuiltin: true;
 }
 
@@ -30,8 +26,8 @@ export const BUNDLED_TEMPLATES: Record<string, BundledTemplateEntry> = {
 	offer: {
 		definition: offerDefinition as TemplateDefinition,
 		mjml: offerMJML,
-		componentDefinition: offerComponentDefinition as ComponentDefinitionDoc,
-		componentModels: offerComponentModels as ComponentModelDoc,
+		componentDefinition: null,
+		componentModels: null,
 		isBuiltin: true
 	}
 };
