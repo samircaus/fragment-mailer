@@ -42,9 +42,9 @@ describe('saveTemplateAsNewVersion', () => {
 		expect(third.data?.version).toBe('1.0.2');
 	});
 
-	it('refuses to delete built-in or sole version', async () => {
+	it('refuses to delete the only version of a template', async () => {
 		await listTemplatePickerItems(undefined);
-		expect((await deleteTemplateVersion(undefined, 'promo')).error).toContain('Built-in');
+		expect((await deleteTemplateVersion(undefined, 'promo')).error).toContain('only version');
 
 		await createTemplate(undefined, {
 			id: 'solo',

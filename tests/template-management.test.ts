@@ -73,10 +73,20 @@ describe('template family management', () => {
 		expect(items.find((t) => t.familyId === 'ajo-news')?.name).toBe('Spring Newsletter');
 	});
 
-	it('refuses to rename built-in templates', async () => {
+	it('renames seeded templates', async () => {
 		await listTemplatePickerItems(undefined);
-		const result = await renameTemplateFamily(undefined, 'promo', 'Renamed Promo');
-		expect(result.error).toContain('Built-in');
+		const renamed = await renameTemplateFamily(undefined, 'promo', 'Promo Email');
+		expect(renamed.error).toBeUndefined();
+		const items = await listTemplatePickerItems(undefined);
+		expect(items.find((t) => t.familyId === 'promo')?.name).toBe('Promo Email');
+	});
+
+	it('deletes a seeded template family', async () => {
+		await listTemplatePickerItems(undefined);
+		const deleted = await deleteTemplateFamily(undefined, 'promo');
+		expect(deleted.error).toBeUndefined();
+		const items = await listTemplatePickerItems(undefined);
+		expect(items.some((t) => t.familyId === 'promo')).toBe(false);
 	});
 
 	it('deletes a custom template family', async () => {
@@ -89,11 +99,5 @@ describe('template family management', () => {
 		expect(deleted.error).toBeUndefined();
 		const items = await listTemplatePickerItems(undefined);
 		expect(items.some((t) => t.familyId === 'ajo-temp')).toBe(false);
-	});
-
-	it('refuses to delete built-in families', async () => {
-		await listTemplatePickerItems(undefined);
-		const result = await deleteTemplateFamily(undefined, 'promo');
-		expect(result.error).toContain('Built-in');
 	});
 });

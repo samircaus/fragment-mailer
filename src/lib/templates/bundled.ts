@@ -11,9 +11,7 @@ import type {
 	TemplateDefinition
 } from './types.js';
 
-export interface BundledTemplateEntry extends StoredTemplateEntry {
-	isBuiltin: true;
-}
+export interface BundledTemplateEntry extends StoredTemplateEntry {}
 
 export const BUNDLED_TEMPLATES: Record<string, BundledTemplateEntry> = {
 	promo: {
@@ -21,14 +19,14 @@ export const BUNDLED_TEMPLATES: Record<string, BundledTemplateEntry> = {
 		mjml: promoMJML,
 		componentDefinition: promoComponentDefinition as ComponentDefinitionDoc,
 		componentModels: promoComponentModels as ComponentModelDoc,
-		isBuiltin: true
+		isBuiltin: false
 	},
 	offer: {
 		definition: offerDefinition as TemplateDefinition,
 		mjml: offerMJML,
 		componentDefinition: null,
 		componentModels: null,
-		isBuiltin: true
+		isBuiltin: false
 	}
 };
 

@@ -1132,7 +1132,7 @@
 	async function handleRenameFamily() {
 		if (!selectedFamilyId || !renameTemplateName.trim() || renameFamilyStatus === 'renaming') return;
 		const family = templateFamilies.find((f) => f.familyId === selectedFamilyId);
-		if (!family || selectedTemplate?.isBuiltin) return;
+		if (!family) return;
 
 		templateActionsOpen = false;
 		renameFamilyStatus = 'renaming';
@@ -1185,7 +1185,6 @@
 			}
 			const fallback =
 				templates.find((t) => t.familyId === campaign?.templateId)?.id ??
-				templates.find((t) => !t.isBuiltin)?.id ??
 				templates[0]?.id ??
 				'';
 			if (fallback) applyTemplateSelection(fallback);
@@ -1272,15 +1271,11 @@
 			.sort((a, b) => b.version.localeCompare(a.version, undefined, { numeric: true }))
 	);
 
-	const canDeleteVersion = $derived(
-		Boolean(selectedTemplate && !selectedTemplate.isBuiltin && familyVersions.length > 1)
-	);
+	const canDeleteVersion = $derived(Boolean(selectedTemplate && familyVersions.length > 1));
 
-	const canDeleteFamily = $derived(
-		Boolean(selectedTemplate && !selectedTemplate.isBuiltin && selectedFamilyId)
-	);
+	const canDeleteFamily = $derived(Boolean(selectedTemplate && selectedFamilyId));
 
-	const canRenameFamily = $derived(Boolean(selectedTemplate && !selectedTemplate.isBuiltin));
+	const canRenameFamily = $derived(Boolean(selectedTemplate && selectedFamilyId));
 
 	const selectedPersona = $derived(personas.find((p) => p.id === selectedPersonaId) ?? null);
 
@@ -1726,9 +1721,6 @@
 											onclick={() => selectVersion(v.id)}
 										>
 											<span class="dropdown-option-primary mono">v{v.version}</span>
-											{#if v.isBuiltin}
-												<span class="dropdown-option-tag">built-in</span>
-											{/if}
 										</button>
 									</li>
 								{/each}
@@ -1806,9 +1798,7 @@
 										disabled={!canDeleteVersion || deleteVersionStatus === 'deleting'}
 										title={canDeleteVersion
 											? 'Remove this version permanently'
-											: selectedTemplate?.isBuiltin
-												? 'Built-in versions cannot be deleted'
-												: 'Keep at least one version'}
+											: 'Keep at least one version — use Delete template to remove all versions'}
 										onclick={handleDeleteVersion}
 									>
 										{deleteVersionStatus === 'deleting' ? 'Deleting…' : 'Delete this version'}
@@ -1820,9 +1810,7 @@
 										class="dropdown-option dropdown-option-compact dropdown-option-danger"
 										role="menuitem"
 										disabled={!canDeleteFamily || deleteFamilyStatus === 'deleting'}
-										title={canDeleteFamily
-											? 'Delete this template and all versions'
-											: 'Built-in templates cannot be deleted'}
+										title={canDeleteFamily ? 'Delete this template and all versions' : undefined}
 										onclick={handleDeleteFamily}
 									>
 										{deleteFamilyStatus === 'deleting' ? 'Deleting…' : 'Delete template'}

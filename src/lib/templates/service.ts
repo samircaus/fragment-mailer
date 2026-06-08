@@ -45,7 +45,7 @@ async function ensureSeeded(db: TemplateDbLike | undefined): Promise<void> {
 				mjml: entry.mjml,
 				componentDefinition: entry.componentDefinition,
 				componentModels: entry.componentModels,
-				isBuiltin: true
+				isBuiltin: false
 			});
 		}
 	}
@@ -61,7 +61,7 @@ function bundledEntry(id: string): StoredTemplateEntry | null {
 		mjml: entry.mjml,
 		componentDefinition: entry.componentDefinition,
 		componentModels: entry.componentModels,
-		isBuiltin: true
+		isBuiltin: false
 	};
 }
 
@@ -87,7 +87,7 @@ export async function listTemplatePickerItems(
 			familyId: t.id,
 			name: t.name,
 			version: t.version,
-			isBuiltin: true
+			isBuiltin: false
 		}));
 	}
 	return rows.map((row) => ({
@@ -122,9 +122,6 @@ export async function renameTemplateFamily(
 
 	const siblings = await listEmailTemplateRowsByFamily(db, familyId);
 	if (siblings.length === 0) return { error: `Template family "${familyId}" not found` };
-	if (siblings.some((row) => row.isBuiltin)) {
-		return { error: 'Built-in templates cannot be renamed' };
-	}
 
 	const updated = await renameEmailTemplateFamily(db, familyId, trimmed);
 	if (updated === 0) return { error: `Template family "${familyId}" not found` };
@@ -140,9 +137,6 @@ export async function deleteTemplateFamily(
 
 	const siblings = await listEmailTemplateRowsByFamily(db, familyId);
 	if (siblings.length === 0) return { error: `Template family "${familyId}" not found` };
-	if (siblings.some((row) => row.isBuiltin)) {
-		return { error: 'Built-in templates cannot be deleted' };
-	}
 
 	const removed = await deleteEmailTemplatesByFamily(db, familyId);
 	if (removed === 0) return { error: `Template family "${familyId}" not found` };
@@ -158,7 +152,6 @@ export async function deleteTemplateVersion(
 
 	const row = await getEmailTemplateRow(db, id);
 	if (!row) return { error: `Template "${id}" not found` };
-	if (row.isBuiltin) return { error: 'Built-in templates cannot be deleted' };
 
 	const siblings = await listEmailTemplateRowsByFamily(db, row.familyId);
 	if (siblings.length <= 1) {
