@@ -158,10 +158,12 @@
 	let ajoPushStatus = $state<'idle' | 'exporting' | 'done' | 'error'>('idle');
 	let ajoHtmlDownloadStatus = $state<'idle' | 'exporting' | 'done' | 'error'>('idle');
 	let ajoHtmlCopyStatus = $state<'idle' | 'exporting' | 'done' | 'error'>('idle');
-	let ajoActionMessage = $state('');
-	let ajoErrorDialogOpen = $state(false);
-	let ajoErrorDialogText = $state('');
-	let ajoErrorCopyStatus = $state<'idle' | 'done'>('idle');
+	let ajoFeedbackOpen = $state(false);
+	let ajoFeedbackKind = $state<'success' | 'error'>('success');
+	let ajoFeedbackTitle = $state('');
+	let ajoFeedbackMessage = $state('');
+	let ajoFeedbackDetail = $state('');
+	let ajoFeedbackCopyStatus = $state<'idle' | 'done'>('idle');
 	let ajoActionsOpen = $state(false);
 	let ajoUnlinkStatus = $state<'idle' | 'unlinking' | 'error'>('idle');
 
@@ -675,7 +677,6 @@
 	async function handleAjoHtmlDownload() {
 		if ((!campaignId && !standaloneTemplateId) || ajoHtmlBusy) return;
 		ajoHtmlDownloadStatus = 'exporting';
-		ajoActionMessage = '';
 		try {
 			const html = await fetchAjoHtml();
 			const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
@@ -688,7 +689,8 @@
 			ajoHtmlDownloadStatus = 'done';
 			setTimeout(() => (ajoHtmlDownloadStatus = 'idle'), 2000);
 		} catch (e) {
-			ajoActionMessage = e instanceof Error ? e.message : 'Export failed';
+			const msg = e instanceof Error ? e.message : 'Export failed';
+			openAjoFeedback({ kind: 'error', title: 'Download failed', message: msg });
 			ajoHtmlDownloadStatus = 'error';
 			setTimeout(() => (ajoHtmlDownloadStatus = 'idle'), 5000);
 		}
@@ -697,34 +699,44 @@
 	async function handleAjoHtmlCopy() {
 		if ((!campaignId && !standaloneTemplateId) || ajoHtmlBusy) return;
 		ajoHtmlCopyStatus = 'exporting';
-		ajoActionMessage = '';
 		try {
 			const html = await fetchAjoHtml();
 			await navigator.clipboard.writeText(html);
 			ajoHtmlCopyStatus = 'done';
 			setTimeout(() => (ajoHtmlCopyStatus = 'idle'), 2000);
 		} catch (e) {
-			ajoActionMessage = e instanceof Error ? e.message : 'Copy failed';
+			const msg = e instanceof Error ? e.message : 'Copy failed';
+			openAjoFeedback({ kind: 'error', title: 'Copy failed', message: msg });
 			ajoHtmlCopyStatus = 'error';
 			setTimeout(() => (ajoHtmlCopyStatus = 'idle'), 5000);
 		}
 	}
 
-	function openAjoErrorDialog(text: string) {
-		ajoErrorDialogText = text;
-		ajoErrorDialogOpen = true;
+	function openAjoFeedback(opts: {
+		kind: 'success' | 'error';
+		title: string;
+		message: string;
+		detail?: string;
+	}) {
+		ajoFeedbackKind = opts.kind;
+		ajoFeedbackTitle = opts.title;
+		ajoFeedbackMessage = opts.message;
+		ajoFeedbackDetail = opts.detail ?? '';
+		ajoFeedbackCopyStatus = 'idle';
+		ajoFeedbackOpen = true;
 	}
 
-	function closeAjoErrorDialog() {
-		ajoErrorDialogOpen = false;
-		ajoErrorCopyStatus = 'idle';
+	function closeAjoFeedback() {
+		ajoFeedbackOpen = false;
+		ajoFeedbackCopyStatus = 'idle';
 	}
 
-	async function copyAjoErrorDialog() {
+	async function copyAjoFeedbackDetail() {
+		if (!ajoFeedbackDetail) return;
 		try {
-			await navigator.clipboard.writeText(ajoErrorDialogText);
-			ajoErrorCopyStatus = 'done';
-			setTimeout(() => (ajoErrorCopyStatus = 'idle'), 2000);
+			await navigator.clipboard.writeText(ajoFeedbackDetail);
+			ajoFeedbackCopyStatus = 'done';
+			setTimeout(() => (ajoFeedbackCopyStatus = 'idle'), 2000);
 		} catch {
 			// ignore — user can still select from textarea
 		}
@@ -739,7 +751,6 @@
 
 		ajoActionsOpen = false;
 		ajoUnlinkStatus = 'unlinking';
-		ajoActionMessage = '';
 		try {
 			const res = isStandalone
 				? await fetch(`/api/templates/${encodeURIComponent(standaloneTemplateId)}/ajo-link`, {
@@ -766,7 +777,8 @@
 			ajoPushStatus = 'idle';
 			ajoUnlinkStatus = 'idle';
 		} catch (e) {
-			ajoActionMessage = e instanceof Error ? e.message : 'Unlink failed';
+			const msg = e instanceof Error ? e.message : 'Unlink failed';
+			openAjoFeedback({ kind: 'error', title: 'Unlink failed', message: msg });
 			ajoUnlinkStatus = 'error';
 			setTimeout(() => (ajoUnlinkStatus = 'idle'), 5000);
 		}
@@ -779,8 +791,7 @@
 	async function handleAjoPush() {
 		if (!campaignId && !standaloneTemplateId) return;
 		ajoPushStatus = 'exporting';
-		ajoActionMessage = '';
-		ajoErrorDialogOpen = false;
+		ajoFeedbackOpen = false;
 		try {
 			const ajoTemplateId = remoteTemplateId();
 			const res = isStandalone
@@ -821,12 +832,17 @@
 					failure: data.failure,
 					validationErrors: data.validationErrors
 				});
-				openAjoErrorDialog(fullError);
-				ajoActionMessage =
+				const summary =
 					data.message ??
 					(Array.isArray(data.validationErrors)
 						? data.validationErrors.map((e) => e.message).join('; ')
 						: `Push failed: ${res.status}`);
+				openAjoFeedback({
+					kind: 'error',
+					title: 'Send failed',
+					message: summary,
+					detail: fullError
+				});
 				ajoPushStatus = 'error';
 				setTimeout(() => (ajoPushStatus = 'idle'), 5000);
 				return;
@@ -849,12 +865,17 @@
 				};
 			}
 			const action = data.pushMethod === 'update' ? 'Updated' : 'Created';
-			ajoActionMessage = data.templateId
+			let successMessage = data.templateId
 				? `${action} ${formatAjoTemplateLabel(data.templateId)}`
 				: 'Sent';
 			if (data.templateId && data.remoteTemplateIdSaved === false && !isStandalone) {
-				ajoActionMessage += ' (id not saved — missing CF UUID)';
+				successMessage += ' (id not saved — missing CF UUID)';
 			}
+			openAjoFeedback({
+				kind: 'success',
+				title: 'Sent to AJO',
+				message: successMessage
+			});
 			ajoPushStatus = 'done';
 			if (isStandalone) {
 				await loadStandaloneTemplate();
@@ -864,8 +885,7 @@
 			setTimeout(() => (ajoPushStatus = 'idle'), 5000);
 		} catch (e) {
 			const msg = e instanceof Error ? e.message : 'Push failed';
-			openAjoErrorDialog(msg);
-			ajoActionMessage = msg;
+			openAjoFeedback({ kind: 'error', title: 'Send failed', message: msg });
 			ajoPushStatus = 'error';
 			setTimeout(() => (ajoPushStatus = 'idle'), 5000);
 		}
@@ -1605,24 +1625,6 @@
 				{/if}
 			</div>
 		</div>
-		{#if ajoActionMessage && (ajoPushStatus === 'done' || ajoPushStatus === 'error' || ajoHtmlDownloadStatus === 'error' || ajoHtmlCopyStatus === 'error')}
-			{#if ajoPushStatus === 'error' && ajoErrorDialogText}
-				<button
-					type="button"
-					class="export-error-hint"
-					title="View full error"
-					onclick={() => (ajoErrorDialogOpen = true)}
-				>
-					{ajoActionMessage} — details
-				</button>
-			{:else if ajoPushStatus === 'done'}
-				<span class="export-success-hint" title={isStandalone ? standaloneEmailStatus?.remoteTemplateId ?? ajoActionMessage : campaign?.emailStatus?.remoteTemplateId ?? ajoActionMessage}>
-					{ajoActionMessage}
-				</span>
-			{:else}
-				<span class="export-error-hint" title={ajoActionMessage}>{ajoActionMessage}</span>
-			{/if}
-		{/if}
 	</header>
 
 	<div class="panels" class:resizing={isResizingPanel}>
@@ -2340,86 +2342,109 @@
 />
 {/if}
 
-{#if ajoErrorDialogOpen}
+{#if ajoFeedbackOpen}
 	<div class="persona-dialog-layer" role="presentation">
 		<button
 			type="button"
 			class="persona-dialog-backdrop"
 			aria-label="Close dialog"
-			onclick={closeAjoErrorDialog}
+			onclick={closeAjoFeedback}
 		></button>
 		<div
-			class="persona-dialog ajo-error-dialog"
+			class="persona-dialog ajo-feedback-dialog"
+			class:ajo-feedback-success={ajoFeedbackKind === 'success'}
+			class:ajo-feedback-error={ajoFeedbackKind === 'error'}
 			role="dialog"
 			aria-modal="true"
 			tabindex="-1"
-			aria-labelledby="ajo-error-dialog-title"
+			aria-labelledby="ajo-feedback-title"
 		>
-			<header class="persona-dialog-header">
-				<div>
-					<h2 id="ajo-error-dialog-title" class="persona-dialog-title">AJO send failed</h2>
-					<p class="persona-dialog-subtitle">Full response from the AJO API — select or copy below</p>
+			<div class="ajo-feedback-body">
+				<div class="ajo-feedback-icon" aria-hidden="true">
+					{#if ajoFeedbackKind === 'success'}
+						<svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+							<circle cx="11" cy="11" r="10" stroke="currentColor" stroke-width="1.5" />
+							<path
+								d="M6.5 11.25 9.5 14.25 15.5 7.75"
+								stroke="currentColor"
+								stroke-width="1.5"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+							/>
+						</svg>
+					{:else}
+						<svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+							<circle cx="11" cy="11" r="10" stroke="currentColor" stroke-width="1.5" />
+							<path d="M11 7v5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+							<circle cx="11" cy="15.5" r="0.75" fill="currentColor" />
+						</svg>
+					{/if}
 				</div>
-				<div class="dialog-header-actions">
-					<button
-						type="button"
-						class="persona-dialog-icon-btn"
-						class:done={ajoErrorCopyStatus === 'done'}
-						onclick={copyAjoErrorDialog}
-						title="Copy to clipboard"
-						aria-label={ajoErrorCopyStatus === 'done' ? 'Copied' : 'Copy to clipboard'}
+				<h2 id="ajo-feedback-title" class="ajo-feedback-title">{ajoFeedbackTitle}</h2>
+				<p class="ajo-feedback-message">{ajoFeedbackMessage}</p>
+				{#if ajoFeedbackDetail && ajoFeedbackDetail !== ajoFeedbackMessage}
+					<div class="ajo-feedback-detail-header">
+						<span class="ajo-feedback-detail-label">Details</span>
+						<button
+							type="button"
+							class="persona-dialog-icon-btn"
+							class:done={ajoFeedbackCopyStatus === 'done'}
+							onclick={copyAjoFeedbackDetail}
+							title="Copy to clipboard"
+							aria-label={ajoFeedbackCopyStatus === 'done' ? 'Copied' : 'Copy to clipboard'}
+						>
+							{#if ajoFeedbackCopyStatus === 'done'}
+								<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+									<path
+										d="M2.5 7.25 5.5 10.25 11.5 3.75"
+										stroke="currentColor"
+										stroke-width="1.5"
+										stroke-linecap="round"
+										stroke-linejoin="round"
+									/>
+								</svg>
+							{:else}
+								<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+									<rect
+										x="4.5"
+										y="4.5"
+										width="7"
+										height="7"
+										rx="1"
+										stroke="currentColor"
+										stroke-width="1.25"
+									/>
+									<path
+										d="M3 9.5V3.5a1 1 0 0 1 1-1H9"
+										stroke="currentColor"
+										stroke-width="1.25"
+										stroke-linecap="round"
+									/>
+								</svg>
+							{/if}
+						</button>
+					</div>
+					<textarea
+						class="ajo-feedback-detail"
+						readonly
+						value={ajoFeedbackDetail}
+						spellcheck={false}
+						aria-label="Error details"
+					></textarea>
+				{/if}
+			</div>
+			<footer class="persona-dialog-footer ajo-feedback-footer">
+				{#if ajoFeedbackKind === 'success' && ajoTemplateUrl}
+					<a
+						href={ajoTemplateUrl}
+						target="_blank"
+						rel="noopener noreferrer"
+						class="ajo-feedback-link"
 					>
-						{#if ajoErrorCopyStatus === 'done'}
-							<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-								<path
-									d="M2.5 7.25 5.5 10.25 11.5 3.75"
-									stroke="currentColor"
-									stroke-width="1.5"
-									stroke-linecap="round"
-									stroke-linejoin="round"
-								/>
-							</svg>
-						{:else}
-							<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-								<rect
-									x="4.5"
-									y="4.5"
-									width="7"
-									height="7"
-									rx="1"
-									stroke="currentColor"
-									stroke-width="1.25"
-								/>
-								<path
-									d="M3 9.5V3.5a1 1 0 0 1 1-1H9"
-									stroke="currentColor"
-									stroke-width="1.25"
-									stroke-linecap="round"
-								/>
-							</svg>
-						{/if}
-					</button>
-					<button
-						type="button"
-						class="persona-dialog-close"
-						onclick={closeAjoErrorDialog}
-						aria-label="Close"
-					>
-						×
-					</button>
-				</div>
-			</header>
-
-			<textarea
-				class="ajo-error-detail"
-				readonly
-				value={ajoErrorDialogText}
-				spellcheck={false}
-				aria-label="AJO error details"
-			></textarea>
-
-			<footer class="persona-dialog-footer">
-				<button type="button" class="btn-create" onclick={closeAjoErrorDialog}>OK</button>
+						Open in AJO
+					</a>
+				{/if}
+				<button type="button" class="btn-create" onclick={closeAjoFeedback}>OK</button>
 			</footer>
 		</div>
 	</div>
@@ -2741,37 +2766,6 @@
 	}
 	.export-btn.error {
 		background: #dc2626;
-	}
-	.export-success-hint {
-		font-size: 11px;
-		color: #16a34a;
-		max-width: 280px;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-	.export-error-hint {
-		font-size: 11px;
-		color: #dc2626;
-		max-width: 200px;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	button.export-error-hint {
-		border: none;
-		padding: 0;
-		margin: 0;
-		background: none;
-		font: inherit;
-		cursor: pointer;
-		text-decoration: underline;
-		text-underline-offset: 2px;
-	}
-
-	button.export-error-hint:hover {
-		color: #b91c1c;
 	}
 
 	/* ── Panels ──────────────────────────────────────────────────────────────── */
@@ -3274,19 +3268,76 @@
 		color: #16a34a;
 	}
 
-	.persona-dialog.ajo-error-dialog {
-		width: min(720px, 100%);
-		max-height: min(85vh, 100%);
+	.persona-dialog.ajo-feedback-dialog {
+		width: min(420px, 100%);
 	}
 
-	.ajo-error-detail {
-		flex: 1;
-		min-height: 240px;
-		max-height: 50vh;
+	.ajo-feedback-body {
+		padding: 24px 24px 16px;
+		text-align: center;
+	}
+
+	.ajo-feedback-icon {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 44px;
+		height: 44px;
+		border-radius: 50%;
+		margin-bottom: 12px;
+	}
+
+	.ajo-feedback-success .ajo-feedback-icon {
+		color: #16a34a;
+		background: #f0fdf4;
+	}
+
+	.ajo-feedback-error .ajo-feedback-icon {
+		color: #dc2626;
+		background: #fef2f2;
+	}
+
+	.ajo-feedback-title {
+		font-size: 15px;
+		font-weight: 600;
+		color: #111;
+		margin: 0 0 6px;
+	}
+
+	.ajo-feedback-message {
+		font-size: 13px;
+		line-height: 1.5;
+		color: #52525b;
 		margin: 0;
-		padding: 14px 16px;
-		border: none;
-		border-bottom: 1px solid #f4f4f5;
+		word-break: break-word;
+	}
+
+	.ajo-feedback-detail-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		margin-top: 16px;
+		padding-top: 12px;
+		border-top: 1px solid #f4f4f5;
+		text-align: left;
+	}
+
+	.ajo-feedback-detail-label {
+		font-size: 11px;
+		font-weight: 600;
+		color: #71717a;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+	}
+
+	.ajo-feedback-detail {
+		width: 100%;
+		min-height: 120px;
+		max-height: 32vh;
+		margin-top: 8px;
+		padding: 10px 12px;
+		border: 1px solid #e4e4e7;
+		border-radius: 8px;
 		outline: none;
 		resize: vertical;
 		font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
@@ -3296,6 +3347,27 @@
 		background: #fafafa;
 		white-space: pre;
 		overflow: auto;
+		text-align: left;
+		box-sizing: border-box;
+	}
+
+	.ajo-feedback-footer {
+		justify-content: flex-end;
+		gap: 10px;
+	}
+
+	.ajo-feedback-link {
+		margin-right: auto;
+		font-size: 12px;
+		font-weight: 500;
+		color: #5b5bd6;
+		text-decoration: none;
+	}
+
+	.ajo-feedback-link:hover {
+		color: #4f4ec9;
+		text-decoration: underline;
+		text-underline-offset: 2px;
 	}
 
 	.persona-json-editor {
