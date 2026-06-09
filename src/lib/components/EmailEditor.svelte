@@ -176,7 +176,7 @@
 	let iframeKey = $state(0);
 	let iframeEl = $state<HTMLIFrameElement | null>(null);
 	let previewLoading = $state(true);
-	let mountedPreviewUrl = $state<string | null>(null);
+	let previewLoadToken = 0;
 	let ajoPushStatus = $state<'idle' | 'exporting' | 'done' | 'error'>('idle');
 	let ajoHtmlDownloadStatus = $state<'idle' | 'exporting' | 'done' | 'error'>('idle');
 	let ajoHtmlCopyStatus = $state<'idle' | 'exporting' | 'done' | 'error'>('idle');
@@ -841,7 +841,7 @@
 			});
 			if (!res.ok) throw new Error(`${res.status}`);
 			await loadTemplates();
-			resetPreview();
+			beginPreviewLoad();
 			selectedTemplateId = id;
 			closeNewTemplateDialog();
 		} catch (err) {
@@ -1172,24 +1172,27 @@
 		previewEnvelope = null;
 	}
 
-	function resetPreview() {
+	function beginPreviewLoad() {
+		previewLoadToken += 1;
 		previewLoading = true;
-		mountedPreviewUrl = null;
-		iframeEl = null;
 		previewWarnings = [];
 		previewEnvelope = null;
 	}
 
 	function bumpPreviewReload() {
-		resetPreview();
+		beginPreviewLoad();
 		iframeKey += 1;
 	}
 
 	function onPreviewIframeLoad() {
-		previewLoading = false;
-		fitIframe();
-		extractPreviewWarnings();
-		extractPreviewEnvelope();
+		const token = previewLoadToken;
+		requestAnimationFrame(() => {
+			if (token !== previewLoadToken) return;
+			previewLoading = false;
+			fitIframe();
+			extractPreviewWarnings();
+			extractPreviewEnvelope();
+		});
 	}
 
 	function personaChipLabel(persona: Persona): string {
@@ -1375,7 +1378,7 @@
 
 	function applyTemplateSelection(templateId: string) {
 		if (!templateId || selectedTemplateId === templateId) return;
-		resetPreview();
+		beginPreviewLoad();
 		selectedTemplateId = templateId;
 		isDirty = false;
 		iframeKey += 1;
@@ -1483,7 +1486,7 @@
 
 	function selectPersona(id: string) {
 		if (selectedPersonaId === id) return;
-		resetPreview();
+		beginPreviewLoad();
 		selectedPersonaId = id;
 		iframeKey += 1;
 	}
@@ -1508,11 +1511,11 @@
 	function handlePersonasChange(detail: { items: PreviewResourceItem[]; selectedId: string }) {
 		personas = detail.items as PersonaListItem[];
 		if (detail.selectedId && detail.selectedId !== selectedPersonaId) {
-			resetPreview();
+			beginPreviewLoad();
 			selectedPersonaId = detail.selectedId;
 			iframeKey += 1;
 		} else if (!personas.some((p) => p.id === selectedPersonaId) && detail.selectedId) {
-			resetPreview();
+			beginPreviewLoad();
 			selectedPersonaId = detail.selectedId;
 			iframeKey += 1;
 		} else if (detail.items.length) {
@@ -1668,24 +1671,11 @@
 		return `/preview/${campaignId}?${params}`;
 	});
 
-	// Unmount preview before paint when the target URL changes, then remount on the next tick.
+	// Clear envelope/warnings before paint when preview target changes.
 	$effect.pre(() => {
 		void previewUrl;
 		if (isLoading) return;
-		resetPreview();
-	});
-
-	$effect(() => {
-		void previewUrl;
-		if (isLoading) return;
-		const url = previewUrl;
-		let cancelled = false;
-		queueMicrotask(() => {
-			if (!cancelled) mountedPreviewUrl = url;
-		});
-		return () => {
-			cancelled = true;
-		};
+		beginPreviewLoad();
 	});
 </script>
 
@@ -2667,62 +2657,63 @@
 					<span>Loading…</span>
 				</div>
 			{:else}
-				<div class="preview-stage" class:preview-stage-with-envelope={!!previewEnvelope && !previewLoading}>
+				<div
+					class="preview-stage"
+					class:preview-stage-with-envelope={!!previewEnvelope && !previewLoading}
+					class:preview-stage-loading={previewLoading}
+				>
 					{#if previewLoading}
-						<div class="preview-loading" aria-live="polite">
+						<div class="preview-loading preview-loading-overlay" aria-live="polite">
 							<div class="loading-dot"></div>
 							<span>Loading preview…</span>
 						</div>
 					{/if}
-					{#if mountedPreviewUrl}
-						<div
-							class="preview-column"
-							class:preview-column-hidden={previewLoading}
-							style:width="{previewViewport === 'mobile'
-								? PREVIEW_MOBILE_WIDTH
-								: PREVIEW_DESKTOP_WIDTH}px"
-						>
-							{#if previewEnvelope && !previewLoading}
-								<div
-									class="preview-envelope"
-									class:preview-envelope-warn={previewEnvelope.unresolved.length > 0}
-									role="group"
-									aria-label="Email envelope preview"
-								>
-									<p class="preview-envelope-subject" title={previewEnvelope.subject}>
-										{previewEnvelope.subject || '—'}
+					<div
+						class="preview-column"
+						style:width="{previewViewport === 'mobile'
+							? PREVIEW_MOBILE_WIDTH
+							: PREVIEW_DESKTOP_WIDTH}px"
+					>
+						{#if previewEnvelope && !previewLoading}
+							<div
+								class="preview-envelope"
+								class:preview-envelope-warn={previewEnvelope.unresolved.length > 0}
+								role="group"
+								aria-label="Email envelope preview"
+							>
+								<p class="preview-envelope-subject" title={previewEnvelope.subject}>
+									{previewEnvelope.subject || '—'}
+								</p>
+								<p class="preview-envelope-sender" title={previewEnvelope.from}>
+									{previewEnvelope.from || '—'}
+								</p>
+								{#if previewEnvelope.preheader}
+									<p class="preview-envelope-preheader" title={previewEnvelope.preheader}>
+										{previewEnvelope.preheader}
 									</p>
-									<p class="preview-envelope-sender" title={previewEnvelope.from}>
-										{previewEnvelope.from || '—'}
+								{/if}
+								{#if previewEnvelope.unresolved.length > 0}
+									<p class="preview-envelope-hint">
+										Unresolved:
+										{previewEnvelope.unresolved.map((p) => `{{${p}}}`).join(', ')}
 									</p>
-									{#if previewEnvelope.preheader}
-										<p class="preview-envelope-preheader" title={previewEnvelope.preheader}>
-											{previewEnvelope.preheader}
-										</p>
-									{/if}
-									{#if previewEnvelope.unresolved.length > 0}
-										<p class="preview-envelope-hint">
-											Unresolved:
-											{previewEnvelope.unresolved.map((p) => `{{${p}}}`).join(', ')}
-										</p>
-									{/if}
-								</div>
-							{/if}
-							<div class="preview-frame-shell">
-								{#key mountedPreviewUrl}
-									<iframe
-										bind:this={iframeEl}
-										src={mountedPreviewUrl}
-										title="Email preview"
-										allow="same-origin"
-										scrolling="no"
-										class="preview-iframe"
-										onload={onPreviewIframeLoad}
-									></iframe>
-								{/key}
+								{/if}
 							</div>
+						{/if}
+						<div class="preview-frame-shell">
+							{#key previewUrl}
+								<iframe
+									bind:this={iframeEl}
+									src={previewUrl}
+									title="Email preview"
+									allow="same-origin"
+									scrolling="no"
+									class="preview-iframe"
+									onload={onPreviewIframeLoad}
+								></iframe>
+							{/key}
 						</div>
-					{/if}
+					</div>
 				</div>
 			{/if}
 		</main>
@@ -4865,8 +4856,31 @@
 		font-size: 13px;
 	}
 
-	.preview-column-hidden {
-		display: none;
+	.preview-stage {
+		flex: 1;
+		width: 100%;
+		display: flex;
+		justify-content: center;
+		padding: 24px;
+	}
+
+	.preview-stage-loading {
+		position: relative;
+	}
+
+	.preview-loading-overlay {
+		position: absolute;
+		inset: 0;
+		z-index: 2;
+		background: #f4f4f5;
+	}
+
+	.preview-chrome-dark .preview-loading-overlay {
+		background: #18181b;
+	}
+
+	.preview-stage-with-envelope {
+		padding-top: 20px;
 	}
 
 	.loading-dot {
@@ -4887,21 +4901,6 @@
 			opacity: 1;
 			transform: scale(1);
 		}
-	}
-
-	.preview-stage {
-		flex: 1;
-		width: 100%;
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		justify-content: center;
-		padding: 24px;
-		min-height: 200px;
-	}
-
-	.preview-stage-with-envelope {
-		padding-top: 20px;
 	}
 
 	.preview-column {
