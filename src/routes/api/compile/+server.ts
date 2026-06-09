@@ -1,5 +1,5 @@
 // POST /api/compile
-// Compiles editor MJML to HTML with the same token resolution as preview (no UE injection).
+// Compiles editor source to HTML with the same token resolution as preview (no UE injection).
 
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
@@ -9,11 +9,8 @@ import { getCampaignWithCF } from '$lib/campaigns/service.js';
 import { loadTemplate } from '$lib/templates/service.js';
 import { aemAssetBaseUrl } from '$lib/aem/env.js';
 import { buildRenderCfContext } from '$lib/render/cf-context.js';
-import { resolve } from '$lib/render/resolve.js';
-import { compileMJML } from '$lib/render/mjml.js';
-import { instrumentCFOutputTokens } from '$lib/render/inject-ue.js';
+import { renderTemplateSource } from '$lib/render/compile-template.js';
 import { flattenPersona, resolvePreviewPersona } from '$lib/personas/validate.js';
-import { applyPreviewFragments } from '$lib/fragments/preview.js';
 import { resolveAppEnv } from '$lib/server/app-env.js';
 
 const CompileRequestSchema = z.object({
@@ -55,6 +52,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 		throw error(404, templateResult.error);
 	}
 	const { cf } = campaignResult.data;
+	const { definition } = templateResult.data!;
 	const cfContext = buildRenderCfContext(cf.fields, aemAssetBaseUrl(env));
 
 	const resolvedPersona = resolvePreviewPersona(
@@ -69,22 +67,22 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 		static: { year: new Date().getFullYear() }
 	};
 
-	const mjmlWithFragments = await applyPreviewFragments(mjml, env);
-	const instrumentedMJML = instrumentCFOutputTokens(mjmlWithFragments);
-	const { html: resolvedMJML, warnings } = resolve(instrumentedMJML, context);
+	const result = await renderTemplateSource(mjml, context, {
+		definition,
+		applyFragments: true,
+		env
+	});
 
-	const compileResult = await compileMJML(resolvedMJML);
-	if (!compileResult.html) {
+	if (!result.html) {
 		return json(
 			{
 				html: null,
-				errors: compileResult.errors,
-				warnings
+				errors: result.errors,
+				warnings: result.warnings
 			},
 			{ status: 422 }
 		);
 	}
 
-	return json({ html: compileResult.html, warnings });
+	return json({ html: result.html, warnings: result.warnings });
 };
-

@@ -17,6 +17,7 @@
 	import { displayStatusHint, displayStatusLabel } from '$lib/db/attach-email-status.js';
 	import type { EmailStatusInfo } from '$lib/db/email-status-types.js';
 	import MjmlCodeEditor from '$lib/components/MjmlCodeEditor.svelte';
+	import TemplateFormatBadge from '$lib/components/TemplateFormatBadge.svelte';
 	import type { AjoRequestFailure } from '$lib/ajo/client.js';
 	import { formatAjoPushError } from '$lib/ajo/format-push-error.js';
 	import { formatAjoTemplateLabel } from '$lib/ajo/format-template-id.js';
@@ -25,10 +26,12 @@
 		type EmailEnvelope
 	} from '$lib/preview/envelope.js';
 	import type { AjoExpressionFragmentDetail } from '$lib/ajo/fragment-types.js';
+	import { buildHtmlTree } from '$lib/html/tree.js';
 	import {
 		isMjmlFragmentSource,
 		unwrapFragmentMjmlForEdit
 	} from '$lib/mjml/fragment-mjml.js';
+	import type { TemplateSourceFormat } from '$lib/templates/types.js';
 
 	type EmailEditorMode = 'campaign' | 'standalone' | 'fragment';
 
@@ -56,12 +59,14 @@
 		familyId: string;
 		name: string;
 		version: string;
+		sourceFormat?: TemplateSourceFormat;
 		isBuiltin: boolean;
 	}
 
 	interface TemplateFamily {
 		familyId: string;
 		name: string;
+		sourceFormat: TemplateSourceFormat;
 	}
 
 	interface FlatNode {
@@ -93,6 +98,7 @@
 	// Template
 	let templates = $state<TemplateInfo[]>([]);
 	let selectedTemplateId = $state('');
+	let newTemplateSourceFormat = $state<TemplateSourceFormat>('mjml');
 	let mjmlCode = $state('');
 	let isDirty = $state(false);
 	let saveStatus = $state<'idle' | 'saving' | 'saved' | 'error'>('idle');
@@ -169,6 +175,8 @@
 	let previewEnvelope = $state<EmailEnvelope | null>(null);
 	let iframeKey = $state(0);
 	let iframeEl = $state<HTMLIFrameElement | null>(null);
+	let previewLoading = $state(true);
+	let mountedPreviewUrl = $state<string | null>(null);
 	let ajoPushStatus = $state<'idle' | 'exporting' | 'done' | 'error'>('idle');
 	let ajoHtmlDownloadStatus = $state<'idle' | 'exporting' | 'done' | 'error'>('idle');
 	let ajoHtmlCopyStatus = $state<'idle' | 'exporting' | 'done' | 'error'>('idle');
@@ -229,7 +237,12 @@
 	};
 
 	// Tag colour groups for the tree
-	function nodeColor(tag: string): string {
+	function nodeColor(tag: string, sourceFormat: TemplateSourceFormat): string {
+		if (sourceFormat === 'html') {
+			if (['table', 'tr', 'td', 'th', 'tbody', 'thead'].includes(tag)) return 'structure';
+			if (['head', 'meta', 'link', 'style', 'title'].includes(tag)) return 'head';
+			return 'content';
+		}
 		if (tag === 'mjml' || tag === 'mj-body' || tag === 'mj-section' || tag === 'mj-column')
 			return 'structure';
 		if (tag === 'mj-head' || tag.startsWith('mj-attributes') || tag === 'mj-style' || tag === 'mj-preview')
@@ -282,7 +295,7 @@
 	$effect(() => {
 		if (isFragment) return;
 		if (selectedTemplateId) {
-			loadTemplateMJML(selectedTemplateId);
+			loadTemplateSource(selectedTemplateId);
 		}
 	});
 
@@ -322,22 +335,34 @@
 		window.addEventListener('mouseup', onUp);
 	}
 
-	// Rebuild structure tree whenever MJML code changes
+	// Rebuild structure tree whenever source changes
 	$effect(() => {
-		treeNodes = buildTree(mjmlCode);
+		const source = mjmlCode;
+		const tpl = templates.find((t) => t.id === selectedTemplateId);
+		const format = tpl?.sourceFormat ?? 'mjml';
+		treeNodes = format === 'html' ? buildHtmlTree(source) : buildTree(source);
 	});
 
-	// Debounced HTML compile when viewing HTML tab or when inputs change on that tab
+	$effect(() => {
+		const tpl = templates.find((t) => t.id === selectedTemplateId);
+		if ((tpl?.sourceFormat ?? 'mjml') === 'html' && activeTab === 'html') {
+			activeTab = 'code';
+		}
+	});
+
+	// Debounced HTML compile when viewing compiled HTML tab (MJML templates only)
 	$effect(() => {
 		const mjml = mjmlCode;
 		const tab = activeTab;
+		const tpl = templates.find((t) => t.id === selectedTemplateId);
+		const htmlTemplate = (tpl?.sourceFormat ?? 'mjml') === 'html';
 		const id = isFragment ? fragmentId : isStandalone ? standaloneTemplateId : campaignId;
 		const templateId = selectedTemplateId;
 		const personaId = selectedPersonaId;
 		const persona = selectedPersona;
 		const version = cfVersion;
 
-		if (tab !== 'html' || !id || !mjml.trim()) {
+		if (htmlTemplate || tab !== 'html' || !id || !mjml.trim()) {
 			return;
 		}
 		if (!isFragment && !templateId) {
@@ -512,6 +537,7 @@
 						headers: { 'Content-Type': 'application/json' },
 						body: JSON.stringify({
 							mjml,
+							templateId: templateId || standaloneTemplateId || undefined,
 							personaId,
 							persona: persona ?? undefined
 						})
@@ -558,12 +584,15 @@
 		}
 	}
 
-	async function loadTemplateMJML(id: string) {
+	async function loadTemplateSource(id: string) {
 		templateLoadError = '';
 		try {
 			const res = await fetch(`/api/templates/${id}`);
 			if (!res.ok) throw new Error(`${res.status}`);
-			const data = (await res.json()) as { mjml: string };
+			const data = (await res.json()) as {
+				mjml: string;
+				sourceFormat?: TemplateSourceFormat;
+			};
 			mjmlCode = data.mjml;
 			isDirty = false;
 		} catch (err) {
@@ -616,7 +645,7 @@
 				}
 				isDirty = false;
 				saveStatus = 'saved';
-				iframeKey += 1;
+				bumpPreviewReload();
 				await loadFragment(fragmentId);
 				setTimeout(() => (saveStatus = 'idle'), 2000);
 			} catch {
@@ -637,7 +666,7 @@
 			if (!res.ok) throw new Error(`${res.status}`);
 			isDirty = false;
 			saveStatus = 'saved';
-			iframeKey += 1;
+			bumpPreviewReload();
 			setTimeout(() => (saveStatus = 'idle'), 2000);
 		} catch {
 			saveStatus = 'error';
@@ -661,7 +690,7 @@
 			selectedTemplateId = data.id;
 			isDirty = false;
 			saveVersionStatus = 'saved';
-			iframeKey += 1;
+			bumpPreviewReload();
 			setTimeout(() => (saveVersionStatus = 'idle'), 2000);
 		} catch {
 			saveVersionStatus = 'error';
@@ -695,7 +724,7 @@
 				templates[0]?.id ||
 				'';
 			isDirty = false;
-			iframeKey += 1;
+			bumpPreviewReload();
 			deleteVersionStatus = 'idle';
 		} catch (err) {
 			console.error('Failed to delete template version:', err);
@@ -747,7 +776,7 @@
 			});
 			ajoPushStatus = 'done';
 			isDirty = false;
-			iframeKey += 1;
+			bumpPreviewReload();
 			await loadFragment(fragmentId);
 			setTimeout(() => (ajoPushStatus = 'idle'), 5000);
 		} catch (e) {
@@ -779,6 +808,22 @@
 		}
 	}
 
+	function openNewTemplateDialog() {
+		showNewForm = true;
+		newTemplateName = '';
+		newTemplateSourceFormat = 'mjml';
+	}
+
+	function closeNewTemplateDialog() {
+		showNewForm = false;
+		newTemplateName = '';
+		newTemplateSourceFormat = 'mjml';
+	}
+
+	function handleNewTemplateDialogKeydown(e: KeyboardEvent) {
+		if (e.key === 'Escape') closeNewTemplateDialog();
+	}
+
 	async function handleCreateTemplate() {
 		if (!newTemplateId || !newTemplateName || newTemplateCreating) return;
 		newTemplateCreating = true;
@@ -790,14 +835,15 @@
 				body: JSON.stringify({
 					id,
 					name: newTemplateName,
+					sourceFormat: newTemplateSourceFormat,
 					...(isStandalone ? { cfModel: '' } : {})
 				})
 			});
 			if (!res.ok) throw new Error(`${res.status}`);
 			await loadTemplates();
+			resetPreview();
 			selectedTemplateId = id;
-			showNewForm = false;
-			newTemplateName = '';
+			closeNewTemplateDialog();
 		} catch (err) {
 			console.error('Failed to create template:', err);
 		} finally {
@@ -1126,7 +1172,21 @@
 		previewEnvelope = null;
 	}
 
+	function resetPreview() {
+		previewLoading = true;
+		mountedPreviewUrl = null;
+		iframeEl = null;
+		previewWarnings = [];
+		previewEnvelope = null;
+	}
+
+	function bumpPreviewReload() {
+		resetPreview();
+		iframeKey += 1;
+	}
+
 	function onPreviewIframeLoad() {
+		previewLoading = false;
 		fitIframe();
 		extractPreviewWarnings();
 		extractPreviewEnvelope();
@@ -1149,7 +1209,7 @@
 		if (previewChrome === chrome) return;
 		previewChrome = chrome;
 		localStorage.setItem(PREVIEW_CHROME_KEY, chrome);
-		iframeKey += 1;
+		bumpPreviewReload();
 	}
 
 	// ─── Structure tree ───────────────────────────────────────────────────────────
@@ -1315,6 +1375,7 @@
 
 	function applyTemplateSelection(templateId: string) {
 		if (!templateId || selectedTemplateId === templateId) return;
+		resetPreview();
 		selectedTemplateId = templateId;
 		isDirty = false;
 		iframeKey += 1;
@@ -1422,6 +1483,7 @@
 
 	function selectPersona(id: string) {
 		if (selectedPersonaId === id) return;
+		resetPreview();
 		selectedPersonaId = id;
 		iframeKey += 1;
 	}
@@ -1446,28 +1508,44 @@
 	function handlePersonasChange(detail: { items: PreviewResourceItem[]; selectedId: string }) {
 		personas = detail.items as PersonaListItem[];
 		if (detail.selectedId && detail.selectedId !== selectedPersonaId) {
+			resetPreview();
 			selectedPersonaId = detail.selectedId;
 			iframeKey += 1;
 		} else if (!personas.some((p) => p.id === selectedPersonaId) && detail.selectedId) {
+			resetPreview();
 			selectedPersonaId = detail.selectedId;
 			iframeKey += 1;
 		} else if (detail.items.length) {
-			iframeKey += 1;
+			bumpPreviewReload();
 		}
 	}
 
 	// ─── Derived ─────────────────────────────────────────────────────────────────
 	const selectedTemplate = $derived(templates.find((t) => t.id === selectedTemplateId) ?? null);
 	const selectedFamilyId = $derived(selectedTemplate?.familyId ?? '');
+	const currentSourceFormat = $derived<TemplateSourceFormat>(selectedTemplate?.sourceFormat ?? 'mjml');
+	const isHtmlTemplate = $derived(currentSourceFormat === 'html');
 
 	const templateFamilies = $derived.by((): TemplateFamily[] => {
-		const seen = new Map<string, TemplateFamily>();
+		const byFamily = new Map<string, TemplateInfo[]>();
 		for (const t of templates) {
-			if (!seen.has(t.familyId)) {
-				seen.set(t.familyId, { familyId: t.familyId, name: t.name });
-			}
+			const versions = byFamily.get(t.familyId) ?? [];
+			versions.push(t);
+			byFamily.set(t.familyId, versions);
 		}
-		return [...seen.values()].sort((a, b) => a.name.localeCompare(b.name));
+
+		return [...byFamily.entries()]
+			.map(([familyId, versions]) => {
+				const latest = versions.sort((a, b) =>
+					b.version.localeCompare(a.version, undefined, { numeric: true })
+				)[0]!;
+				return {
+					familyId,
+					name: latest.name,
+					sourceFormat: latest.sourceFormat ?? 'mjml'
+				};
+			})
+			.sort((a, b) => a.name.localeCompare(b.name));
 	});
 
 	const familyVersions = $derived(
@@ -1571,13 +1649,6 @@
 		}
 	});
 
-	// Clear warnings and envelope while the preview iframe reloads
-	$effect(() => {
-		void iframeKey;
-		previewWarnings = [];
-		previewEnvelope = null;
-	});
-
 	const previewUrl = $derived.by(() => {
 		const params = new URLSearchParams({
 			templateId: selectedTemplateId || 'default',
@@ -1595,6 +1666,26 @@
 			return `/preview/standalone/${encodeURIComponent(standaloneTemplateId)}?${params}`;
 		}
 		return `/preview/${campaignId}?${params}`;
+	});
+
+	// Unmount preview before paint when the target URL changes, then remount on the next tick.
+	$effect.pre(() => {
+		void previewUrl;
+		if (isLoading) return;
+		resetPreview();
+	});
+
+	$effect(() => {
+		void previewUrl;
+		if (isLoading) return;
+		const url = previewUrl;
+		let cancelled = false;
+		queueMicrotask(() => {
+			if (!cancelled) mountedPreviewUrl = url;
+		});
+		return () => {
+			cancelled = true;
+		};
 	});
 </script>
 
@@ -1942,9 +2033,12 @@
 						>
 							<span class="dropdown-value">
 								{#if templates.length === 0}
-									<span class="dropdown-primary">…</span>
+									<span class="dropdown-primary">No templates</span>
 								{:else if selectedTemplate}
-									<span class="dropdown-primary">{selectedTemplate.name}</span>
+									<span class="dropdown-primary dropdown-primary-with-icon">
+										<TemplateFormatBadge format={currentSourceFormat} />
+										{selectedTemplate.name}
+									</span>
 								{:else}
 									<span class="dropdown-primary">Template</span>
 								{/if}
@@ -1965,7 +2059,10 @@
 											aria-selected={selectedFamilyId === family.familyId}
 											onclick={() => selectFamily(family.familyId)}
 										>
-											<span class="dropdown-option-primary">{family.name}</span>
+											<span class="dropdown-option-primary dropdown-option-primary-with-icon">
+												<TemplateFormatBadge format={family.sourceFormat} />
+												{family.name}
+											</span>
 										</button>
 									</li>
 								{/each}
@@ -2113,10 +2210,7 @@
 
 					<button
 						class="picker-action-btn picker-action-btn-compact accent"
-						onclick={() => {
-							showNewForm = !showNewForm;
-							newTemplateName = '';
-						}}
+						onclick={openNewTemplateDialog}
 						title="Create new template"
 					>
 						+ New
@@ -2153,38 +2247,6 @@
 				</div>
 			{/if}
 
-			<!-- New template inline form -->
-			{#if showNewForm}
-				<div class="new-form">
-					<input
-						class="new-form-input"
-						bind:value={newTemplateName}
-						placeholder="Template name…"
-						onkeydown={(e) => e.key === 'Enter' && handleCreateTemplate()}
-					/>
-					{#if newTemplateName}
-						<div class="new-form-id">id: <code>{isStandalone ? `ajo-${newTemplateId}` : newTemplateId}</code></div>
-					{/if}
-					<div class="new-form-actions">
-						<button
-							class="btn-create"
-							onclick={handleCreateTemplate}
-							disabled={!newTemplateId || newTemplateCreating}
-						>
-							{newTemplateCreating ? 'Creating…' : 'Create'}
-						</button>
-						<button
-							class="btn-cancel"
-							onclick={() => {
-								showNewForm = false;
-								newTemplateName = '';
-							}}
-						>
-							Cancel
-						</button>
-					</div>
-				</div>
-			{/if}
 			{/if}
 
 			<!-- Tab bar -->
@@ -2200,9 +2262,11 @@
 				<button type="button" class="tab" class:active={activeTab === 'tree'} onclick={() => (activeTab = 'tree')}>
 					Structure
 				</button>
-				<button type="button" class="tab" class:active={activeTab === 'html'} onclick={() => (activeTab = 'html')}>
-					HTML
-				</button>
+				{#if !isHtmlTemplate}
+					<button type="button" class="tab" class:active={activeTab === 'html'} onclick={() => (activeTab = 'html')}>
+						HTML
+					</button>
+				{/if}
 			</div>
 
 			<!-- Panel content -->
@@ -2286,21 +2350,27 @@
 								onsave={handleSave}
 							/>
 						{/if}
-						<a
-							href="https://documentation.mjml.io/#mjml-guide"
-							target="_blank"
-							rel="noopener noreferrer"
-							class="mjml-docs-link"
-							title="MJML documentation"
-						>
-							MJML docs ↗
-						</a>
+						{#if !isHtmlTemplate}
+							<a
+								href="https://documentation.mjml.io/#mjml-guide"
+								target="_blank"
+								rel="noopener noreferrer"
+								class="mjml-docs-link"
+								title="MJML documentation"
+							>
+								MJML docs ↗
+							</a>
+						{/if}
 					</div>
 				{:else if activeTab === 'html'}
 					<div class="editor-wrap html-panel">
-						<div class="html-panel-hint">Read-only · compiled from MJML with current persona</div>
+						<div class="html-panel-hint">
+							{isHtmlTemplate
+								? 'Read-only · resolved HTML with current persona and content'
+								: 'Read-only · compiled from MJML with current persona'}
+						</div>
 						{#if !mjmlCode.trim()}
-							<div class="html-empty">No MJML to compile</div>
+							<div class="html-empty">{isHtmlTemplate ? 'No HTML to preview' : 'No MJML to compile'}</div>
 						{:else if htmlCompileStatus === 'loading' && !htmlOutput}
 							<div class="html-empty">Compiling…</div>
 						{:else if htmlCompileStatus === 'error'}
@@ -2320,7 +2390,11 @@
 					<div class="tree-view">
 						{#if treeNodes.length === 0}
 							<div class="tree-empty">
-								{mjmlCode.trim() ? 'No MJML structure detected' : 'No template loaded'}
+								{mjmlCode.trim()
+									? isHtmlTemplate
+										? 'No HTML structure detected'
+										: 'No MJML structure detected'
+									: 'No template loaded'}
 							</div>
 						{:else}
 							<div class="tree-scroll">
@@ -2338,8 +2412,8 @@
 													{collapsedPaths.has(node.path) ? '▶' : '▾'}
 												{/if}
 											</button>
-											<span class="node-tag node-{nodeColor(node.tag)}">{node.tag}</span>
-											{#if (CHILD_COMPONENTS[node.tag]?.length ?? 0) > 0}
+											<span class="node-tag node-{nodeColor(node.tag, currentSourceFormat)}">{node.tag}</span>
+											{#if !isHtmlTemplate && (CHILD_COMPONENTS[node.tag]?.length ?? 0) > 0}
 												<button
 													type="button"
 													class="add-child-btn"
@@ -2593,51 +2667,62 @@
 					<span>Loading…</span>
 				</div>
 			{:else}
-				<div class="preview-stage" class:preview-stage-with-envelope={!!previewEnvelope}>
-					<div
-						class="preview-column"
-						style:width="{previewViewport === 'mobile'
-							? PREVIEW_MOBILE_WIDTH
-							: PREVIEW_DESKTOP_WIDTH}px"
-					>
-						{#if previewEnvelope}
-							<div
-								class="preview-envelope"
-								class:preview-envelope-warn={previewEnvelope.unresolved.length > 0}
-								role="group"
-								aria-label="Email envelope preview"
-							>
-								<p class="preview-envelope-subject" title={previewEnvelope.subject}>
-									{previewEnvelope.subject || '—'}
-								</p>
-								<p class="preview-envelope-sender" title={previewEnvelope.from}>
-									{previewEnvelope.from || '—'}
-								</p>
-								{#if previewEnvelope.preheader}
-									<p class="preview-envelope-preheader" title={previewEnvelope.preheader}>
-										{previewEnvelope.preheader}
-									</p>
-								{/if}
-								{#if previewEnvelope.unresolved.length > 0}
-									<p class="preview-envelope-hint">
-										Unresolved:
-										{previewEnvelope.unresolved.map((p) => `{{${p}}}`).join(', ')}
-									</p>
-								{/if}
-							</div>
-						{/if}
-						<div class="preview-frame-shell">
-							<iframe
-								bind:this={iframeEl}
-								src={previewUrl}
-								title="Email preview"
-								allow="same-origin"
-								scrolling="no"
-								class="preview-iframe"
-								onload={onPreviewIframeLoad}
-							></iframe>
+				<div class="preview-stage" class:preview-stage-with-envelope={!!previewEnvelope && !previewLoading}>
+					{#if previewLoading}
+						<div class="preview-loading" aria-live="polite">
+							<div class="loading-dot"></div>
+							<span>Loading preview…</span>
 						</div>
-					</div>
+					{/if}
+					{#if mountedPreviewUrl}
+						<div
+							class="preview-column"
+							class:preview-column-hidden={previewLoading}
+							style:width="{previewViewport === 'mobile'
+								? PREVIEW_MOBILE_WIDTH
+								: PREVIEW_DESKTOP_WIDTH}px"
+						>
+							{#if previewEnvelope && !previewLoading}
+								<div
+									class="preview-envelope"
+									class:preview-envelope-warn={previewEnvelope.unresolved.length > 0}
+									role="group"
+									aria-label="Email envelope preview"
+								>
+									<p class="preview-envelope-subject" title={previewEnvelope.subject}>
+										{previewEnvelope.subject || '—'}
+									</p>
+									<p class="preview-envelope-sender" title={previewEnvelope.from}>
+										{previewEnvelope.from || '—'}
+									</p>
+									{#if previewEnvelope.preheader}
+										<p class="preview-envelope-preheader" title={previewEnvelope.preheader}>
+											{previewEnvelope.preheader}
+										</p>
+									{/if}
+									{#if previewEnvelope.unresolved.length > 0}
+										<p class="preview-envelope-hint">
+											Unresolved:
+											{previewEnvelope.unresolved.map((p) => `{{${p}}}`).join(', ')}
+										</p>
+									{/if}
+								</div>
+							{/if}
+							<div class="preview-frame-shell">
+								{#key mountedPreviewUrl}
+									<iframe
+										bind:this={iframeEl}
+										src={mountedPreviewUrl}
+										title="Email preview"
+										allow="same-origin"
+										scrolling="no"
+										class="preview-iframe"
+										onload={onPreviewIframeLoad}
+									></iframe>
+								{/key}
+							</div>
+						</div>
+					{/if}
 				</div>
 			{/if}
 		</main>
@@ -2662,6 +2747,99 @@
 	cfEditorTenant={$page.data.aem.cfEditorTenant}
 	onclose={() => (templateFieldsManagerOpen = false)}
 />
+{/if}
+
+{#if showNewForm}
+	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+	<div
+		class="persona-dialog-layer"
+		role="presentation"
+		onkeydown={handleNewTemplateDialogKeydown}
+	>
+		<button
+			type="button"
+			class="persona-dialog-backdrop"
+			aria-label="Close dialog"
+			onclick={closeNewTemplateDialog}
+		></button>
+		<div
+			class="persona-dialog new-template-dialog"
+			role="dialog"
+			aria-modal="true"
+			tabindex="-1"
+			aria-labelledby="new-template-title"
+		>
+			<header class="persona-dialog-header">
+				<div>
+					<h2 id="new-template-title" class="persona-dialog-title">New template</h2>
+					<p class="persona-dialog-subtitle">Choose a format and name for your template</p>
+				</div>
+				<button
+					type="button"
+					class="persona-dialog-close"
+					aria-label="Close"
+					onclick={closeNewTemplateDialog}
+				>
+					×
+				</button>
+			</header>
+			<div class="new-template-dialog-body">
+				<fieldset class="new-template-format-fieldset">
+					<legend class="new-template-field-label">Format</legend>
+					<div class="new-template-format-grid" role="group" aria-label="Template format">
+						<button
+							type="button"
+							class="new-template-format-card"
+							class:selected={newTemplateSourceFormat === 'mjml'}
+							aria-pressed={newTemplateSourceFormat === 'mjml'}
+							onclick={() => (newTemplateSourceFormat = 'mjml')}
+						>
+							<TemplateFormatBadge format="mjml" size="md" />
+							<span class="new-template-format-card-label">MJML</span>
+							<span class="new-template-format-card-hint">Responsive email components</span>
+						</button>
+						<button
+							type="button"
+							class="new-template-format-card"
+							class:selected={newTemplateSourceFormat === 'html'}
+							aria-pressed={newTemplateSourceFormat === 'html'}
+							onclick={() => (newTemplateSourceFormat = 'html')}
+						>
+							<TemplateFormatBadge format="html" size="md" />
+							<span class="new-template-format-card-label">HTML</span>
+							<span class="new-template-format-card-hint">Raw HTML email markup</span>
+						</button>
+					</div>
+				</fieldset>
+				<label class="new-template-field" for="new-template-name">
+					<span class="new-template-field-label">Name</span>
+					<input
+						id="new-template-name"
+						class="new-form-input"
+						bind:value={newTemplateName}
+						placeholder="Summer newsletter"
+						onkeydown={(e) => e.key === 'Enter' && handleCreateTemplate()}
+					/>
+				</label>
+				{#if newTemplateName}
+					<div class="new-form-id">
+						Template id: <code>{isStandalone ? `ajo-${newTemplateId}` : newTemplateId}</code>
+					</div>
+				{/if}
+			</div>
+			<footer class="persona-dialog-footer">
+				<button type="button" class="btn-cancel" onclick={closeNewTemplateDialog}>Cancel</button>
+				<button
+					type="button"
+					class="btn-create"
+					onclick={handleCreateTemplate}
+					disabled={!newTemplateId || newTemplateCreating}
+				>
+					{newTemplateCreating ? 'Creating…' : 'Create template'}
+				</button>
+			</footer>
+		</div>
+	</div>
 {/if}
 
 {#if ajoFeedbackOpen}
@@ -3201,6 +3379,91 @@
 
 	.panel-resize-handle:focus-visible {
 		outline: none;
+	}
+
+	.dropdown-primary-with-icon,
+	.dropdown-option-primary-with-icon {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		min-width: 0;
+	}
+
+	.new-template-dialog {
+		width: min(440px, 100%);
+	}
+
+	.new-template-dialog-body {
+		padding: 16px;
+		display: flex;
+		flex-direction: column;
+		gap: 14px;
+	}
+
+	.new-template-format-fieldset {
+		border: none;
+		margin: 0;
+		padding: 0;
+		min-width: 0;
+	}
+
+	.new-template-field-label {
+		display: block;
+		font-size: 12px;
+		font-weight: 600;
+		color: #52525b;
+		margin-bottom: 8px;
+	}
+
+	.new-template-format-grid {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 8px;
+	}
+
+	.new-template-format-card {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 6px;
+		padding: 12px;
+		border: 1px solid #e4e4e7;
+		border-radius: 10px;
+		background: #fafafa;
+		cursor: pointer;
+		text-align: left;
+		transition:
+			border-color 0.15s,
+			background 0.15s,
+			box-shadow 0.15s;
+	}
+
+	.new-template-format-card:hover {
+		background: #f4f4f5;
+	}
+
+	.new-template-format-card.selected {
+		border-color: #c7d2fe;
+		background: #eef2ff;
+		box-shadow: 0 0 0 1px #c7d2fe;
+	}
+
+	.new-template-format-card-label {
+		font-size: 13px;
+		font-weight: 600;
+		color: #18181b;
+	}
+
+	.new-template-format-card-hint {
+		font-size: 11px;
+		color: #71717a;
+		line-height: 1.35;
+	}
+
+	.new-template-field {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
 	}
 
 	/* Template picker */
@@ -4602,6 +4865,10 @@
 		font-size: 13px;
 	}
 
+	.preview-column-hidden {
+		display: none;
+	}
+
 	.loading-dot {
 		width: 8px;
 		height: 8px;
@@ -4626,8 +4893,11 @@
 		flex: 1;
 		width: 100%;
 		display: flex;
+		flex-direction: column;
+		align-items: center;
 		justify-content: center;
 		padding: 24px;
+		min-height: 200px;
 	}
 
 	.preview-stage-with-envelope {

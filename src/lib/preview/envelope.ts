@@ -1,4 +1,7 @@
 import { resolve, type RenderContext } from '$lib/render/resolve.js';
+import type { TemplateSourceFormat } from '$lib/templates/source-format.js';
+import { getTemplateSourceFormat } from '$lib/templates/source-format.js';
+import type { TemplateDefinition } from '$lib/templates/types.js';
 
 export interface EmailEnvelope {
 	subject: string;
@@ -12,6 +15,8 @@ export interface ResolveEnvelopeInput {
 	mjml: string;
 	context: RenderContext;
 	templateName?: string;
+	definition?: TemplateDefinition;
+	sourceFormat?: TemplateSourceFormat;
 }
 
 /** Extract inner text from the first matching MJML head tag (mj-title, mj-preview). */
@@ -20,6 +25,11 @@ export function extractMjHeadTag(mjml: string, tag: 'mj-title' | 'mj-preview'): 
 	const match = mjml.match(re);
 	if (!match?.[1]) return null;
 	return match[1].trim();
+}
+
+function extractHtmlTitle(source: string): string | null {
+	const match = source.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+	return match?.[1]?.trim() ?? null;
 }
 
 function resolveTemplateSnippet(snippet: string, context: RenderContext): { text: string; warnings: string[] } {
@@ -51,9 +61,15 @@ function collectUnresolved(...values: string[]): string[] {
 export function resolveEmailEnvelope(input: ResolveEnvelopeInput): EmailEnvelope {
 	const { mjml, context, templateName } = input;
 	const cf = context.cf;
+	const sourceFormat =
+		input.sourceFormat ??
+		(input.definition ? getTemplateSourceFormat(input.definition) : 'mjml');
 
-	const titleTemplate = extractMjHeadTag(mjml, 'mj-title');
-	const previewTemplate = extractMjHeadTag(mjml, 'mj-preview');
+	const titleTemplate =
+		sourceFormat === 'html'
+			? extractHtmlTitle(mjml)
+			: extractMjHeadTag(mjml, 'mj-title');
+	const previewTemplate = sourceFormat === 'html' ? null : extractMjHeadTag(mjml, 'mj-preview');
 
 	const resolvedTitle = titleTemplate
 		? resolveTemplateSnippet(titleTemplate, context)

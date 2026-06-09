@@ -4,6 +4,7 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { z } from 'zod';
+import { DEFAULT_HTML_TEMPLATE } from '$lib/templates/source-format.js';
 import {
 	createTemplate,
 	listTemplatePickerItems,
@@ -39,6 +40,7 @@ const DEFAULT_MJML = `<mjml>
 const CreateSchema = z.object({
 	id: z.string().min(1).regex(/^[a-z0-9-]+$/, 'ID must be lowercase letters, numbers, and hyphens'),
 	name: z.string().min(1),
+	sourceFormat: z.enum(['mjml', 'html']).optional(),
 	mjml: z.string().optional(),
 	cfModel: z.string().optional(),
 	componentDefinition: z.record(z.string(), z.unknown()).optional(),
@@ -56,10 +58,14 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 	const parsed = CreateSchema.safeParse(body);
 	if (!parsed.success) throw error(400, `Invalid request: ${parsed.error.message}`);
 
+	const sourceFormat = parsed.data.sourceFormat ?? 'mjml';
 	const result = await createTemplate(platform, {
 		id: parsed.data.id,
 		name: parsed.data.name,
-		mjml: parsed.data.mjml ?? DEFAULT_MJML,
+		sourceFormat,
+		mjml:
+			parsed.data.mjml ??
+			(sourceFormat === 'html' ? DEFAULT_HTML_TEMPLATE : DEFAULT_MJML),
 		cfModel: parsed.data.cfModel,
 		componentDefinition: parsed.data.componentDefinition as never,
 		componentModels: parsed.data.componentModels as never

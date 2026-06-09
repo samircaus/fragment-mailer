@@ -4,6 +4,7 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { z } from 'zod';
+import { getTemplateSourceFormat } from '$lib/templates/source-format.js';
 import {
 	deleteTemplateVersion,
 	loadTemplate,
@@ -19,6 +20,7 @@ export const GET: RequestHandler = async ({ params, platform }) => {
 	return json({
 		id: params.id,
 		mjml,
+		sourceFormat: getTemplateSourceFormat(definition),
 		definition,
 		componentDefinition,
 		componentModels,

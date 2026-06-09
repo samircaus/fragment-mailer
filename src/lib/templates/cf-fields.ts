@@ -189,6 +189,7 @@ export function syncTemplateFromAemModel(input: SyncTemplateFromAemInput): SyncT
 		name: existingDefinition?.name ?? aemModel.title,
 		version: existingDefinition?.version ?? '1.0.0',
 		cfModel,
+		...(existingDefinition?.sourceFormat ? { sourceFormat: existingDefinition.sourceFormat } : {}),
 		fields,
 		profileTokens: existingDefinition?.profileTokens ?? [],
 		previewSize: existingDefinition?.previewSize ?? { width: 600, height: 900 }

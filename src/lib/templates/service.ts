@@ -14,6 +14,10 @@ import {
 	updateEmailTemplate,
 	type TemplateDbLike
 } from '$lib/db/email-templates.js';
+import {
+	defaultTemplateSource,
+	getTemplateSourceFormat
+} from '$lib/templates/source-format.js';
 import { bumpPatchVersion, versionIdForFamily } from '$lib/templates/version.js';
 import { BUNDLED_TEMPLATES, loadBundledTemplate, listBundledTemplateDefinitions } from '$lib/templates/bundled.js';
 import type {
@@ -22,7 +26,8 @@ import type {
 	StoredTemplateEntry,
 	TemplateDefinition,
 	TemplatePickerItem,
-	TemplateResult
+	TemplateResult,
+	TemplateSourceFormat
 } from '$lib/templates/types.js';
 
 export type { StoredTemplateEntry, TemplateDefinition, TemplatePickerItem, TemplateResult };
@@ -80,13 +85,17 @@ export async function listTemplatePickerItems(
 	const db = getDb(platform);
 	await ensureSeeded(db);
 	const rows = await listEmailTemplateRows(db);
-	return rows.map((row) => ({
-		id: row.id,
-		familyId: row.familyId,
-		name: row.name,
-		version: row.version,
-		isBuiltin: row.isBuiltin
-	}));
+	return rows.map((row) => {
+		const entry = rowToStoredTemplateEntry(row);
+		return {
+			id: row.id,
+			familyId: row.familyId,
+			name: row.name,
+			version: row.version,
+			sourceFormat: getTemplateSourceFormat(entry.definition),
+			isBuiltin: row.isBuiltin
+		};
+	});
 }
 
 export async function listStandaloneTemplatePickerItems(
@@ -244,7 +253,8 @@ export async function saveTemplateAsNewVersion(
 export interface CreateTemplateInput {
 	id: string;
 	name: string;
-	mjml: string;
+	mjml?: string;
+	sourceFormat?: TemplateSourceFormat;
 	cfModel?: string;
 	componentDefinition?: ComponentDefinitionDoc | null;
 	componentModels?: ComponentModelDoc | null;
@@ -261,15 +271,21 @@ export async function createTemplate(
 		return { error: `Template "${input.id}" already exists` };
 	}
 
+	const sourceFormat = input.sourceFormat ?? 'mjml';
 	const definition: TemplateDefinition = {
 		id: input.id,
 		name: input.name,
 		version: '1.0.0',
 		cfModel: input.cfModel ?? '',
+		sourceFormat,
 		fields: {},
 		profileTokens: [],
 		previewSize: { width: 600, height: 800 }
 	};
+
+	const mjml =
+		input.mjml?.trim() ||
+		(sourceFormat === 'html' ? defaultTemplateSource('html') : defaultTemplateSource('mjml'));
 
 	await insertEmailTemplate(db, {
 		id: input.id,
@@ -278,7 +294,7 @@ export async function createTemplate(
 		version: definition.version,
 		cfModel: definition.cfModel,
 		definition,
-		mjml: input.mjml,
+		mjml,
 		componentDefinition: input.componentDefinition ?? null,
 		componentModels: input.componentModels ?? null,
 		isBuiltin: false

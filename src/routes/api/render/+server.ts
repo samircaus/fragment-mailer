@@ -11,13 +11,11 @@ import { aemAssetBaseUrl, aemClientOptions } from '$lib/aem/env.js';
 import type { CFFragment } from '$lib/aem/types.js';
 import { loadTemplateForCampaign } from '$lib/templates/load-for-campaign.js';
 import { buildRenderCfContext } from '$lib/render/cf-context.js';
-import { resolve } from '$lib/render/resolve.js';
-import { compileMJML } from '$lib/render/mjml.js';
+import { renderTemplateSource } from '$lib/render/compile-template.js';
 import {
 	collectCFOutputBindings,
 	injectUEAttributes,
-	injectUEBody,
-	instrumentCFOutputTokens
+	injectUEBody
 } from '$lib/render/inject-ue.js';
 import { buildUEBindings } from '$lib/render/ue-bindings.js';
 import { flattenPersona } from '$lib/personas/validate.js';
@@ -85,24 +83,23 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 	const mjmlWithFragments =
 		mode === 'preview' ? await applyPreviewFragments(mjml, appEnv) : mjml;
 
-	// Instrument {{cf.*}} output tokens so UE can map editable spans.
-	const instrumentedMJML = instrumentCFOutputTokens(mjmlWithFragments);
 	const discoveredBindings = collectCFOutputBindings(mjmlWithFragments);
 
-	// Resolve tokens
-	const { html: resolvedMJML, warnings } = resolve(instrumentedMJML, context);
+	const renderResult = await renderTemplateSource(mjmlWithFragments, context, {
+		definition,
+		applyFragments: false,
+		instrumentUe: true,
+		env: appEnv
+	});
+	const warnings = renderResult.warnings;
 
-	// Compile MJML → HTML
-	const compileResult = await compileMJML(resolvedMJML);
-	if (!compileResult.html) {
-		throw error(
-			500,
-			`MJML compilation failed: ${compileResult.errors.map((e) => e.message).join('; ')}`
-		);
+	if (!renderResult.html) {
+		const details = renderResult.errors.map((e) => e.message).join('; ');
+		throw error(500, `Template render failed: ${details}`);
 	}
 
 	// Inject UE attributes (preview mode only)
-	let finalHtml = compileResult.html;
+	let finalHtml = renderResult.html;
 	if (mode === 'preview') {
 		const bindings = buildUEBindings({
 			definition,

@@ -4,6 +4,7 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { z } from 'zod';
 import { transformStandaloneMjmlForAjo } from '$lib/ajo/export-pipeline.js';
+import { getTemplateSourceFormat } from '$lib/templates/source-format.js';
 import { createContentTemplate, updateContentTemplate } from '$lib/ajo/client.js';
 import { buildAjoEmailHtmlTemplatePayload } from '$lib/ajo/types.js';
 import { loadTemplate } from '$lib/templates/service.js';
@@ -52,7 +53,11 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 	const mjml =
 		mjmlFromBody && mjmlFromBody.length > 0 ? mjmlFromBody : templateResult.data.mjml;
 
-	const transform = await transformStandaloneMjmlForAjo({ mjml, env });
+	const transform = await transformStandaloneMjmlForAjo({
+		mjml,
+		env,
+		sourceFormat: getTemplateSourceFormat(templateResult.data.definition)
+	});
 	if (transform.validationErrors.length > 0) {
 		return json(
 			{

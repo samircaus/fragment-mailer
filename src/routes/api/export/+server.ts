@@ -13,8 +13,8 @@ import { resolveAppEnv } from '$lib/server/app-env.js';
 import type { CFFragment, ResolvedCFData } from '$lib/aem/types.js';
 import { loadTemplateForCampaign } from '$lib/templates/load-for-campaign.js';
 import type { TemplateDefinition } from '$lib/templates/types.js';
-import { resolve } from '$lib/render/resolve.js';
-import { compileMJML } from '$lib/render/mjml.js';
+import { renderTemplateSource } from '$lib/render/compile-template.js';
+import { getTemplateSourceFormat } from '$lib/templates/source-format.js';
 import { rewriteCfRefsForAjo, wrapAjoControlTagsForMjml } from '$lib/render/ajo-export.js';
 import { flattenPersona } from '$lib/personas/validate.js';
 import { getPersonaById } from '$lib/personas/service.js';
@@ -65,17 +65,34 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 		static: { year: new Date().getFullYear() }
 	};
 
-	// Resolve + compile
-	const mjmlForCompile =
-		cfMode === 'preserve-refs'
-			? buildPreserveRefsMJML(mjml, primaryCF, context.cf)
-			: resolve(mjml, context).html;
-	const compileResult = await compileMJML(mjmlForCompile, { minify: false });
-	if (!compileResult.html) {
-		throw error(
-			500,
-			`MJML compilation failed: ${compileResult.errors.map((e) => e.message).join('; ')}`
-		);
+	const sourceFormat = getTemplateSourceFormat(definition);
+	let compiledHtml: string;
+
+	if (cfMode === 'preserve-refs' && sourceFormat === 'mjml') {
+		const mjmlForCompile = buildPreserveRefsMJML(mjml, primaryCF, context.cf);
+		const renderResult = await renderTemplateSource(mjmlForCompile, context, {
+			definition,
+			sourceFormat: 'mjml',
+			applyFragments: false,
+			compile: { minify: false }
+		});
+		if (!renderResult.html) {
+			const details = renderResult.errors.map((e) => e.message).join('; ');
+			throw error(500, `Template render failed: ${details}`);
+		}
+		compiledHtml = renderResult.html;
+	} else {
+		const renderResult = await renderTemplateSource(mjml, context, {
+			definition,
+			sourceFormat,
+			applyFragments: false,
+			compile: { minify: false }
+		});
+		if (!renderResult.html) {
+			const details = renderResult.errors.map((e) => e.message).join('; ');
+			throw error(500, `Template render failed: ${details}`);
+		}
+		compiledHtml = renderResult.html;
 	}
 
 	// Build manifest
@@ -85,11 +102,11 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 		primaryCF,
 		referencedCFs,
 		personaId,
-		renderedHtml: compileResult.html
+		renderedHtml: compiledHtml
 	});
 
 	return json(
-		{ html: compileResult.html, manifest, cfMode },
+		{ html: compiledHtml, manifest, cfMode },
 		{
 			headers: {
 				'Content-Disposition': `attachment; filename="${campaignId}-export.json"`

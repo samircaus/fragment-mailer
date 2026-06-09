@@ -20,14 +20,19 @@ export interface TemplatePickerItem {
 	familyId: string;
 	name: string;
 	version: string;
+	sourceFormat: TemplateSourceFormat;
 	isBuiltin: boolean;
 }
+
+export type TemplateSourceFormat = 'mjml' | 'html';
 
 export interface TemplateDefinition {
 	id: string;
 	name: string;
 	version: string;
 	cfModel: string;
+	/** Defaults to `mjml` when omitted (legacy templates). */
+	sourceFormat?: TemplateSourceFormat;
 	fields: Record<string, TemplateFieldDefinition>;
 	profileTokens: string[];
 	previewSize: { width: number; height: number };

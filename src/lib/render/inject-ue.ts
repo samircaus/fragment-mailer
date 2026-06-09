@@ -1,4 +1,5 @@
 import { collectLetVariableBindings, extractLetVarPath, parseLetFragmentAliases } from '$lib/render/let-bindings.js';
+import type { TemplateSourceFormat } from '$lib/templates/source-format.js';
 import { cfUeResourceUrn } from '$lib/ue/context.js';
 
 // Universal Editor (UE) attribute injector.
@@ -193,14 +194,20 @@ function collectCfPathsInText(text: string, found: Set<string>): void {
 	text.replace(OUTPUT_TOKEN_RE, collect);
 }
 
-const UE_ATTRIBUTE_TAG_RE = /\b(?:mj-image|mj-button)\b/i;
+const UE_ATTRIBUTE_TAG_RE: Record<TemplateSourceFormat, RegExp> = {
+	mjml: /\b(?:mj-image|mj-button)\b/i,
+	html: /\b(?:img|a)\b/i
+};
 
-export function instrumentCFOutputTokens(template: string): string {
+export function instrumentCFOutputTokens(
+	template: string,
+	sourceFormat: TemplateSourceFormat = 'mjml'
+): string {
 	const letAliases = parseLetFragmentAliases(template);
-	return transformMjmlTemplate(
+	return transformTemplateMarkup(
 		template,
 		(seg) => instrumentCfTokensInSegment(seg, letAliases),
-		(tag) => instrumentCfTokensInTag(tag, letAliases)
+		(tag) => instrumentCfTokensInTag(tag, letAliases, sourceFormat)
 	);
 }
 
@@ -208,7 +215,7 @@ export function instrumentCFOutputTokens(template: string): string {
 export function collectCFOutputBindings(template: string): string[] {
 	const letAliases = parseLetFragmentAliases(template);
 	const found = new Set<string>();
-	transformMjmlTemplate(
+	transformTemplateMarkup(
 		template,
 		(segment) => {
 			collectCfTokensInSegment(segment, found);
@@ -239,8 +246,12 @@ function mapFieldTypeToAUE(type: UEBinding['fieldType']): string {
 	}
 }
 
-function instrumentCfTokensInTag(tag: string, letAliases: Map<string, string>): string {
-	if (!UE_ATTRIBUTE_TAG_RE.test(tag)) return tag;
+function instrumentCfTokensInTag(
+	tag: string,
+	letAliases: Map<string, string>,
+	sourceFormat: TemplateSourceFormat = 'mjml'
+): string {
+	if (!UE_ATTRIBUTE_TAG_RE[sourceFormat].test(tag)) return tag;
 
 	const paths = collectCfPathsFromTag(tag, letAliases);
 	if (paths.length === 0) return tag;
@@ -286,7 +297,7 @@ function pickPrimaryTagBindingPath(tag: string, paths: string[]): string | null 
 	return paths[0] ?? null;
 }
 
-function transformMjmlTemplate(
+function transformTemplateMarkup(
 	input: string,
 	transformText: (segment: string) => string,
 	transformTag: (tag: string) => string

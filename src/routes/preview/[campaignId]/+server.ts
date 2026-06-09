@@ -8,15 +8,14 @@ import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 
 import { loadTemplateForCampaign } from '$lib/templates/load-for-campaign.js';
-import { resolve } from '$lib/render/resolve.js';
-import { compileMJML } from '$lib/render/mjml.js';
+import { renderTemplateSource } from '$lib/render/compile-template.js';
 import {
 	collectCFOutputBindings,
 	injectUEAttributes,
 	injectUEBody,
-	injectUEHead,
-	instrumentCFOutputTokens
+	injectUEHead
 } from '$lib/render/inject-ue.js';
+import { getTemplateSourceFormat } from '$lib/templates/source-format.js';
 import { buildUEBindings } from '$lib/render/ue-bindings.js';
 import { validate, type ValidationWarning } from '$lib/render/validate.js';
 import { flattenPersona, resolvePreviewPersona } from '$lib/personas/validate.js';
@@ -64,6 +63,7 @@ export const GET: RequestHandler = async ({ params, url, platform, locals }) => 
 		throw error(404, templateResult.error);
 	}
 	const { definition, mjml } = templateResult.data!;
+	const sourceFormat = getTemplateSourceFormat(definition);
 	const campaignIdEncoded = encodeURIComponent(campaignId);
 
 	const cfContext = buildRenderCfContext(
@@ -85,26 +85,30 @@ export const GET: RequestHandler = async ({ params, url, platform, locals }) => 
 	};
 
 	const mjmlWithFragments = await applyPreviewFragments(mjml, env);
-
-	// Instrument {{cf.*}} output tokens first, then resolve values.
-	const instrumentedMJML = instrumentCFOutputTokens(mjmlWithFragments);
 	const discoveredBindings = collectCFOutputBindings(mjmlWithFragments);
 
 	const envelope = resolveEmailEnvelope({
 		mjml: mjmlWithFragments,
 		context,
-		templateName: definition.name
+		templateName: definition.name,
+		definition
 	});
 
-	// Resolve tokens
-	const { html: resolvedMJML, warnings: resolveWarnings } = resolve(instrumentedMJML, context);
+	const renderResult = await renderTemplateSource(mjmlWithFragments, context, {
+		definition,
+		applyFragments: false,
+		instrumentUe: true,
+		env
+	});
+	const resolveWarnings = renderResult.warnings;
 
-	// Compile MJML → HTML
-	const compileResult = await compileMJML(resolvedMJML);
-	if (!compileResult.html) {
+	if (!renderResult.html) {
+		const details = renderResult.errors.map((e) => e.message).join('; ');
 		throw error(
 			500,
-			`MJML compilation failed: ${compileResult.errors.map((e) => e.message).join('; ')}`
+			sourceFormat === 'html'
+				? `HTML render failed: ${details}`
+				: `MJML compilation failed: ${details}`
 		);
 	}
 
@@ -115,7 +119,7 @@ export const GET: RequestHandler = async ({ params, url, platform, locals }) => 
 		cfFields: cf.fields,
 		mjml: mjmlWithFragments
 	});
-	let html = injectUEAttributes(compileResult.html, bindings);
+	let html = injectUEAttributes(renderResult.html, bindings);
 	html = injectUEBody(html, cf.path);
 	const aemConnectionUrl =
 		locals.aem?.authorHost ??

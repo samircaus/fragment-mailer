@@ -4,8 +4,7 @@ import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { loadTemplate } from '$lib/templates/service.js';
 import { applyPreviewFragments } from '$lib/fragments/preview.js';
-import { resolve } from '$lib/render/resolve.js';
-import { compileMJML } from '$lib/render/mjml.js';
+import { renderTemplateSource } from '$lib/render/compile-template.js';
 import { flattenPersona, resolvePreviewPersona } from '$lib/personas/validate.js';
 import { getPersonaById } from '$lib/personas/service.js';
 import { applyPreviewColorScheme } from '$lib/preview/color-scheme-preview.js';
@@ -46,19 +45,23 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
 	const envelope = resolveEmailEnvelope({
 		mjml: mjmlWithFragments,
 		context,
-		templateName: definition.name
+		templateName: definition.name,
+		definition
 	});
 
-	const { html: resolvedMJML, warnings: resolveWarnings } = resolve(mjmlWithFragments, context);
-	const compileResult = await compileMJML(resolvedMJML);
-	if (!compileResult.html) {
-		throw error(
-			500,
-			`MJML compilation failed: ${compileResult.errors.map((e) => e.message).join('; ')}`
-		);
+	const renderResult = await renderTemplateSource(mjmlWithFragments, context, {
+		definition,
+		applyFragments: false,
+		env
+	});
+	const resolveWarnings = renderResult.warnings;
+
+	if (!renderResult.html) {
+		const details = renderResult.errors.map((e) => e.message).join('; ');
+		throw error(500, `Template render failed: ${details}`);
 	}
 
-	let html = compileResult.html;
+	let html = renderResult.html;
 	const htmlComments = [formatEnvelopeHtmlComment(envelope)];
 	if (resolveWarnings.length > 0) {
 		htmlComments.push(

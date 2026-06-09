@@ -5,6 +5,7 @@ import {
 	fetchAuthorFragmentRawByPath
 } from '$lib/aem/author.js';
 import { aemClientOptions, authorHostUrl, publishHostRepoId, type AppEnv } from '$lib/aem/env.js';
+import { renderTemplateSource } from '$lib/render/compile-template.js';
 import { compileMJML } from '$lib/render/mjml.js';
 import {
 	buildLetFragmentTag,
@@ -161,16 +162,39 @@ export interface StandaloneAjoTransformResult {
 	validationErrors: AjoExportValidationError[];
 }
 
-/** Compile MJML for AJO without AEM content fragment bindings. */
+/** Compile template source for AJO without AEM content fragment bindings. */
 export async function transformStandaloneMjmlForAjo(input: {
 	mjml: string;
 	env?: AppEnv;
+	sourceFormat?: 'mjml' | 'html';
 }): Promise<StandaloneAjoTransformResult> {
+	const sourceFormat = input.sourceFormat ?? 'mjml';
 	const mjmlWithFragments = await applyPreviewFragments(input.mjml, input.env);
+	const validationErrors: AjoExportValidationError[] = [];
+
+	if (sourceFormat === 'html') {
+		const renderResult = await renderTemplateSource(mjmlWithFragments, {
+			cf: {},
+			profile: {},
+			preserveProfile: true,
+			static: { year: new Date().getFullYear() }
+		}, {
+			sourceFormat: 'html',
+			applyFragments: false
+		});
+		const html = normalizeAjoPersonalizationSyntax(renderResult.html ?? '');
+		if (!renderResult.html) {
+			validationErrors.push({
+				code: 'leftover_load_tags',
+				message: `HTML render failed: ${renderResult.errors.map((e) => e.message).join('; ')}`
+			});
+		}
+		return { html, validationErrors };
+	}
+
 	const wrappedMjml = wrapAjoControlTagsForMjml(mjmlWithFragments);
 	const compileResult = await compileMJML(wrappedMjml, { minify: false });
 	const html = normalizeAjoPersonalizationSyntax(compileResult.html ?? '');
-	const validationErrors: AjoExportValidationError[] = [];
 
 	if (!compileResult.html) {
 		validationErrors.push({
