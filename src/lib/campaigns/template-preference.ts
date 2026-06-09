@@ -4,6 +4,7 @@ import {
 } from '$lib/db/campaign-template-prefs.js';
 import { getDb, statusScopeFromEnv } from '$lib/db/email-status.js';
 import type { StatusScope } from '$lib/db/email-status-types.js';
+import { isStandaloneTemplateId } from '$lib/templates/template-scope.js';
 
 export async function resolveCampaignTemplateId(
 	platform: App.Platform | undefined,
@@ -21,7 +22,7 @@ export async function resolveCampaignTemplateId(
 	const scope = options?.scope ?? statusScopeFromEnv(env);
 	const db = getDb(platform);
 	const stored = await getCampaignTemplatePref(db, scope, campaignId);
-	if (stored) return stored;
+	if (stored && !isStandaloneTemplateId(stored)) return stored;
 
 	return inferredTemplateId || 'default';
 }

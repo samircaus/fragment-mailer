@@ -8,6 +8,8 @@ import { resolveCampaignTemplateId, saveCampaignTemplatePreference } from '../sr
 import {
 	createTemplate,
 	deleteTemplateFamily,
+	listAemTemplatePickerItems,
+	listStandaloneTemplatePickerItems,
 	listTemplatePickerItems,
 	renameTemplateFamily,
 	resetTemplateStoreForTests
@@ -37,7 +39,8 @@ describe('campaign template preference', () => {
 		expect(resolved).toBe('cta-over-image');
 	});
 
-	it('falls back to inferred template', async () => {
+	it('falls back when stored preference points to a standalone template', async () => {
+		await setCampaignTemplatePref(undefined, scope, 'spring-promo', 'ajo-test@1.0.0');
 		const resolved = await resolveCampaignTemplateId(undefined, 'spring-promo', 'default');
 		expect(resolved).toBe('default');
 	});
@@ -52,6 +55,33 @@ describe('campaign template preference', () => {
 		await saveCampaignTemplatePreference(undefined, 'spring-promo', 'ajo-test');
 		const stored = await getCampaignTemplatePref(undefined, scope, 'spring-promo');
 		expect(stored).toBe('ajo-test');
+	});
+});
+
+describe('template scope separation', () => {
+	beforeEach(() => {
+		resetTemplateStoreForTests();
+	});
+
+	it('excludes standalone templates from AEM picker list', async () => {
+		await createTemplate(undefined, {
+			id: 'ajo-newsletter',
+			name: 'AJO Newsletter',
+			mjml: '<mjml><mj-body></mj-body></mjml>'
+		});
+		await createTemplate(undefined, {
+			id: 'spring-promo',
+			name: 'Spring Promo',
+			mjml: '<mjml><mj-body></mj-body></mjml>'
+		});
+
+		const aemItems = await listAemTemplatePickerItems(undefined);
+		expect(aemItems.some((t) => t.familyId === 'ajo-newsletter')).toBe(false);
+		expect(aemItems.some((t) => t.familyId === 'spring-promo')).toBe(true);
+
+		const standaloneItems = await listStandaloneTemplatePickerItems(undefined);
+		expect(standaloneItems.some((t) => t.familyId === 'ajo-newsletter')).toBe(true);
+		expect(standaloneItems.some((t) => t.familyId === 'spring-promo')).toBe(false);
 	});
 });
 

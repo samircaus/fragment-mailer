@@ -18,6 +18,7 @@ import {
 	defaultTemplateSource,
 	getTemplateSourceFormat
 } from '$lib/templates/source-format.js';
+import { isStandaloneTemplateFamilyId } from '$lib/templates/template-scope.js';
 import { bumpPatchVersion, versionIdForFamily } from '$lib/templates/version.js';
 import { BUNDLED_TEMPLATES, loadBundledTemplate, listBundledTemplateDefinitions } from '$lib/templates/bundled.js';
 import type {
@@ -98,13 +99,19 @@ export async function listTemplatePickerItems(
 	});
 }
 
+export async function listAemTemplatePickerItems(
+	platform?: App.Platform
+): Promise<TemplatePickerItem[]> {
+	const items = await listTemplatePickerItems(platform);
+	return items.filter((item) => !isStandaloneTemplateFamilyId(item.familyId));
+}
+
 export async function listStandaloneTemplatePickerItems(
 	platform?: App.Platform
 ): Promise<TemplatePickerItem[]> {
 	const items = await listTemplatePickerItems(platform);
 	return items.filter(
-		(item) =>
-			!item.isBuiltin && (item.id.startsWith('ajo-') || item.familyId.startsWith('ajo-'))
+		(item) => !item.isBuiltin && isStandaloneTemplateFamilyId(item.familyId)
 	);
 }
 

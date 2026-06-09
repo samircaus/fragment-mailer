@@ -7,12 +7,12 @@ import { z } from 'zod';
 import { DEFAULT_HTML_TEMPLATE } from '$lib/templates/source-format.js';
 import {
 	createTemplate,
-	listTemplatePickerItems,
+	listAemTemplatePickerItems,
 	loadTemplate
 } from '$lib/templates/service.js';
 
 export const GET: RequestHandler = async ({ platform }) => {
-	return json({ templates: await listTemplatePickerItems(platform) });
+	return json({ templates: await listAemTemplatePickerItems(platform) });
 };
 
 const DEFAULT_MJML = `<mjml>

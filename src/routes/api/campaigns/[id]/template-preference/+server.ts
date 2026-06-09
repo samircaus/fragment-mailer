@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { getCampaignTemplatePref, setCampaignTemplatePref } from '$lib/db/campaign-template-prefs.js';
 import { getDb, statusScopeFromEnv } from '$lib/db/email-status.js';
 import { resolveAppEnv } from '$lib/server/app-env.js';
+import { isStandaloneTemplateId } from '$lib/templates/template-scope.js';
 import { loadTemplate } from '$lib/templates/service.js';
 
 export const GET: RequestHandler = async ({ params, platform }) => {
@@ -29,6 +30,10 @@ export const PUT: RequestHandler = async ({ params, request, platform }) => {
 
 	const parsed = PutSchema.safeParse(body);
 	if (!parsed.success) throw error(400, `Invalid: ${parsed.error.message}`);
+
+	if (isStandaloneTemplateId(parsed.data.templateId)) {
+		throw error(400, 'Standalone AJO templates cannot be assigned to AEM campaigns');
+	}
 
 	const templateResult = await loadTemplate(platform, parsed.data.templateId);
 	if (templateResult.error || !templateResult.data) {
